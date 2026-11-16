@@ -20,7 +20,20 @@ DATA_DIR = os.environ.get('FPX_DATA_DIR') or (
     os.path.join(os.path.dirname(sys.executable), 'data') if FROZEN else os.path.join(BACKEND_DIR, 'data'))
 CONFIG_PATH = os.environ.get('FPX_CONFIG', os.path.join(DATA_DIR, 'config.json'))
 LOG_DIR = os.path.join(DATA_DIR, 'logs')
-APP_VERSION = os.environ.get('FPX_APP_VERSION', '0.0.0')
+
+
+def _version() -> str:
+    """The desktop app passes its version; in development it comes from desktop/src-tauri/tauri.conf.json."""
+    if os.environ.get('FPX_APP_VERSION'):
+        return os.environ['FPX_APP_VERSION']
+    try:
+        with open(os.path.join(APP_DIR, 'desktop', 'src-tauri', 'tauri.conf.json'), encoding='utf-8') as f:
+            return json.load(f).get('version') or '0.0.0'
+    except (OSError, ValueError):
+        return '0.0.0'
+
+
+APP_VERSION = _version()
 MAX_RECENT = 8
 
 if CORE_DIR not in sys.path:
