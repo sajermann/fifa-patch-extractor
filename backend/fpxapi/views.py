@@ -1,0 +1,138 @@
+"""What the screens show: one summary row per league, team and player (built once per loaded game), the filters,
+sorting and pagination of the lists (always here, never in the browser) and the detail of one item."""
+import math
+import unicodedata
+
+from fpx import fifa14
+
+PAGE_SIZES = (25, 50, 100)
+DEFAULT_PAGE_SIZE = 50
+
+
+def fold(text) -> str:
+    """Lower case without accents, for searching."""
+    nfd = unicodedata.normalize('NFD', str(text or '').lower())
+    return ''.join(c for c in nfd if unicodedata.category(c) != 'Mn')
+
+
+def age(birthdate: str | None, today: str = '2013-07-01') -> int | None:
+    """Age on the game's reference day (the season the database describes)."""
+    if not birthdate:
+        return None
+    by, bm, bd = (int(x) for x in birthdate.split('-'))
+    ty, tm, td = (int(x) for x in today.split('-'))
+    return ty - by - ((tm, td) < (bm, bd))
+
+
+class Index:
+    def __init__(self, src: fifa14.Fifa14Source):
+        self.src = src
+        self.leagues = {lid: self._league(lid) for lid in src.leagues}
+        self.teams = {tid: self._team(tid) for tid in src.teams}
+        self.players = {pid: self._player(pid) for pid in src.players}
+        self._search = {
+            'leagues': {i: fold(' '.join([str(i), *self.src.league_all_names(i).values()])) for i in self.leagues},
+            'teams': {i: fold(' '.join([str(i), *self.src.team_all_names(i).values()])) for i in self.teams},
+            'players': {i: fold(' '.join([str(i), *self.src.player_names(i).values()])) for i in self.players},
+        }
+
+    # ---- summaries ----------------------------------------------------------------------------------------------
+
+    def _league(self, lid: int) -> dict:
+        row = self.src.leagues[lid]
+        country = row.get('countryid')
+        return {
+            'id': lid,
+            'name': self.src.league_display_name(lid),
+            'database_name': row.get('leaguename'),
+            'level': row.get('level'),
+            'country_id': country,
+            'country': self.src.nation_name(country),
+            'team_count': len(self.src.league_teams.get(lid, [])),
+            'has_logo': 'logo' in self.src.league_image_paths(lid),
+        }
+
+    def _team(self, tid: int) -> dict:
+        row = self.src.teams[tid]
+        names = self.src.team_all_names(tid)
+        leagues = self.src.team_leagues.get(tid, [])
+        return {
+            'id': tid,
+            'name': self.src.team_display_name(tid),
+            'abbr3': names.get('abbr3'),
+            'league_ids': leagues,
+            'league': self.src.league_display_name(leagues[0]) if leagues else None,
+            'overall': row.get('overallrating'),
+            'player_count': len(self.src.team_links.get(tid, [])),
+            'has_crest': self.src.crest_path(tid) is not None,
+            'kit_count': len(self.src.kit_paths(tid)),
+            'national_team_of': self.src.national_teams.get(tid),
+            'primary_color': [row.get('teamcolor1r'), row.get('teamcolor1g'), row.get('teamcolor1b')],
+        }
+
+    def _player(self, pid: int) -> dict:
+        row = self.src.players[pid]
+        links = self.src.player_links.get(pid, [])
+        clubs = [ln['teamid'] for ln in links if ln['teamid'] not in self.src.national_teams]
+        birthdate = row.get('birthdate')
+        date = fifa14.to_date(birthdate)
+        suspect = birthdate in self.src.suspect_birthdates
+        return {
+            'id': pid,
+            'name': self.src.player_display_name(pid),
+            'overall': row.get('overallrating'),
+            'potential': row.get('potential'),
+            'position': fifa14.position_name(row.get('preferredposition1')),
+            'position_code': row.get('preferredposition1'),
+            'nationality_id': row.get('nationality'),
+            'nationality': self.src.nation_name(row.get('nationality')),
+            'birthdate': date,
+            'birthdate_suspect': suspect,
+            'age': None if suspect else age(date),
+            'height': row.get('height'),
+            'team_id': clubs[0] if clubs else None,
+            'team': self.src.team_display_name(clubs[0]) if clubs else None,
+            'team_ids': [ln['teamid'] for ln in links],
+            'has_face': self.src.has_face(pid),
+            'has_photo': self.src.photo_path(pid) is not None,
+        }
+
+    # ---- lists --------------------------------------------------------------------------------------------------
+
+    def search(self, kind: str, ids, q: str):
+        needle = fold(q).strip()
+        if not needle:
+            return ids
+        words = needle.split()
+        texts = self._search[kind]
+        return [i for i in ids if all(w in texts[i] for w in words)]
+
+
+SORTS = {
+    'leagues': {'name', 'id', 'level', 'country', 'team_count'},
+    'teams': {'name', 'id', 'overall', 'league', 'player_count', 'kit_count'},
+    'players': {'name', 'id', 'overall', 'potential', 'age', 'position_code', 'nationality', 'team', 'height'},
+}
+DEFAULT_SORT = {'leagues': ('name', 'asc'), 'teams': ('name', 'asc'), 'players': ('overall', 'desc')}
+
+
+def page(rows: list[dict], kind: str, sort: str | None, direction: str | None, page_no: int, size: int) -> dict:
+    """Sorted page of `rows` (summaries). Missing values always go last."""
+    key, default_dir = DEFAULT_SORT[kind]
+    if sort in SORTS[kind]:
+        key = sort
+        default_dir = 'asc' if key in ('name', 'country', 'league', 'nationality', 'team', 'position_code') else 'desc'
+    desc = (direction or default_dir) == 'desc'
+    present = [r for r in rows if r.get(key) is not None]
+    missing = [r for r in rows if r.get(key) is None]
+
+    def sort_key(r):
+        v = r[key]
+        return (fold(v) if isinstance(v, str) else v, r['id'])
+    present.sort(key=sort_key, reverse=desc)
+    rows = present + missing
+    size = size if size in PAGE_SIZES else DEFAULT_PAGE_SIZE
+    pages = max(1, math.ceil(len(rows) / size))
+    page_no = min(max(1, page_no), pages)
+    return {'items': rows[(page_no - 1) * size:page_no * size], 'total': len(rows), 'page': page_no, 'size': size,
+            'pages': pages, 'sort': key, 'dir': 'desc' if desc else 'asc'}

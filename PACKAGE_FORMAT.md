@@ -1,0 +1,95 @@
+# Package format (`fifa-patch-package`, version 1)
+
+A package is one zip file (`*.fifapkg.zip`) with the leagues, teams and players picked from a FIFA PC installation,
+**exactly as the source game has them**. The extractor never adapts a value to any other game or tool: whoever
+imports a package decides how to use each value (convert codes, clean names, resize pictures...).
+
+## Layout
+
+```
+package.json                       the manifest (below)
+leagues/<id>/logo.png, banner.png  league pictures, decoded
+teams/<id>/crest.png               crest, decoded (crest-no-background.png when asked)
+teams/<id>/kits/<type>/jersey.png  kit textures, decoded (shorts.png beside it)
+players/<id>/photo.png             player photo, decoded
+nations/<id>/flag.png              flag, decoded
+game/<game path>                   files as the game reads them (chunked containers already unpacked):
+                                   always the fonts and face files; the original pictures and kits too
+                                   when "includes_originals" is true
+```
+
+`<id>` is always the id of the source database. `<game path>` is the path inside the game folder, lower case with
+`/` separators (e.g. `game/data/sceneassets/kit/kit_1_0_0.rx3`).
+
+## `package.json`
+
+```jsonc
+{
+  "format": "fifa-patch-package",
+  "format_version": 1,                 // a reader refuses versions newer than the ones it knows
+  "source": {
+    "game": "fifa14", "platform": "pc",
+    "patch_name": "…" | null,          // typed by the user
+    "language": "eng_us",              // language database the names were read from
+    "database_from": "loose" | "<archive>.big"
+  },
+  "tool": { "name": "fifa-patch-extractor", "version": "0.1.0" },
+  "created_at": "2026-01-01T12:00:00+00:00",
+  "includes_originals": true,
+  "credits": { "text": "…", "url": "https://…" } | null,
+  "leagues": [League], "teams": [Team], "players": [Player], "nations": [Nation]
+}
+```
+
+Every item has `source_id` and `raw`: `{table name: [rows]}` with the database rows that belong to it, every column,
+values as stored (integers already include the field's range offset, as the game uses them).
+
+### League
+
+| field | meaning |
+|---|---|
+| `names` | every name the game has: `database` (the `leagues` row), `full`, `abbr15`, `abbr`, `trophy`, `trophy_abbr15` (language database; missing ones left out) |
+| `level`, `country_nation_id` | from the `leagues` row |
+| `team_ids` | every team of the league in the source (not only the exported ones) |
+| `images` | `{logo, banner}` → `{image, source_path, original?}` |
+| `raw` | rows with this `leagueid` (`leagues`, `leagueteamlinks`, ...) |
+
+### Team
+
+| field | meaning |
+|---|---|
+| `names` | `database`, `full`, `abbr15`, `abbr10`, `abbr7`, `abbr3`, `commentary` |
+| `colors` | `{primary, secondary, tertiary}` as `[r, g, b]` |
+| `league_ids` | every league of the team in the source |
+| `national_team_of` | nation id when the team is a national team |
+| `crest` | `{image, source_path, original?, image_no_background?, preferred?}` (`preferred: "no_background"` when the user asked for it) |
+| `kits[]` | `type` (kit type id), `role` (`home`, `away`, `goalkeeper` or null), `jersey`, `shorts`, `source_path`, `original?`, `print_positions` (8 rectangles `[u0, v0, u1, v1]`: crest, back number, front number, name, name arc center, name arc tangent, shorts crest, shorts number), `colors`, `name_color`, `name_font {id, file?, family_name?}`, `name_layout`, `name_case`, `back_name_placement`, `number_font {id, color, file?, ink_color?}`, `front_number_placement`, `shorts_number_font {…}`, `shorts_number_placement`, `collar` |
+| `roster[]` | the exported players: `player_id`, `jersey_number`, `position` (the game's code, 28 = substitute, 29 = reserve), `position_name` |
+| `captain_id`, `takers` | ids as in the database (`penalty`, `free_kick`, `long_free_kick`, `left_corner`, `right_corner`); they may point to players that are not in the package |
+| `raw` | rows with this `teamid` (only the exported `teamplayerlinks`) + every `teamkits` row of the team |
+
+`ink_color` is the color the number font file really shows (some club fonts ignore the palette index).
+
+### Player
+
+| field | meaning |
+|---|---|
+| `names` | `first`, `last`, `common`, `jersey` (edited names of the database win; accents kept) |
+| `birthdate`, `birthdate_suspect` | ISO date; suspect = the same date is shared by more than 20% of the players (a placeholder) |
+| `height`, `weight`, `preferred_foot` | as in the database (`right` / `left`) |
+| `positions[]` | `{code, name}` of the preferred positions |
+| `nationality_id` | nation id of the source (see `nations`) |
+| `attributes` | ratings with neutral names (`acceleration`, `sprint_speed`, `finishing`, ..., `overall`, `potential`, `skill_moves`, `weak_foot`) |
+| `appearance` | appearance codes as the game stores them (`headtypecode`, `hairtypecode`, `skintonecode`, ...) |
+| `photo` | `{image, source_path, original?}` or null |
+| `face` | `{files: {game path: {kind, file}}}` (kinds: `head`, `face`, `eyes`, `hair`, `hairlod`) or null |
+| `teams[]` | links to the teams of this package whose roster has the player: `team_id`, `jersey_number`, `position`, `position_name` |
+| `raw` | rows with this `playerid` (every `teamplayerlinks` row of the source, too) + the `playernames` rows of its names |
+
+### Nation
+
+`name`, `national_team_id`, `confederation`, `flag`, `raw` — the nations referenced by the leagues and players.
+
+## Versions
+
+Adding optional fields keeps `format_version`. Changing or removing a field raises it.
