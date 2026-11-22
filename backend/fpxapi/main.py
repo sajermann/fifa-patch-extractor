@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from . import settings  # noqa: I001 - first: it puts the core folder on the path
 
-from fpx import fifa14, images, package  # noqa: E402
+from fpx import fifa14, images, kitprint, package, preview, stadium3d  # noqa: E402
 
 from . import dialogs, views  # noqa: E402
 from .state import Basket, Exports, Selections, SourceHolder
@@ -116,10 +116,14 @@ def forget_recent(path: str):
 
 def basket_counts() -> dict:
     d = basket.data
-    return {'leagues': len(d['leagues']), 'teams': len(d['teams']), 'players': len(basket.player_ids())}
+    return {'nations': len(d['nations']), 'leagues': len(d['leagues']), 'teams': len(d['teams']),
+            'players': len(basket.player_ids()), 'stadiums': len(d['stadiums'])}
 
 
 def _with_basket(kind: str, rows: list[dict]) -> list[dict]:
+    if kind in ('nations', 'stadiums'):
+        inside = set(basket.data[kind])
+        return [{**r, 'in_basket': r['id'] in inside} for r in rows]
     if kind == 'leagues':
         inside = set(basket.data['leagues'])
         return [{**r, 'in_basket': r['id'] in inside} for r in rows]
@@ -139,13 +143,47 @@ def _basket_filter(kind: str, rows: list[dict], value: Optional[str]):
     want = _yes_no(value)
     if want is None:
         return rows
-    if kind == 'leagues':
+    if kind in ('nations', 'stadiums'):
+        inside = set(basket.data[kind])
+    elif kind == 'leagues':
         inside = set(basket.data['leagues'])
     elif kind == 'teams':
         inside = {int(k) for k in basket.data['teams']}
     else:
         inside = basket.player_ids()
     return [r for r in rows if (r['id'] in inside) == want]
+
+
+@app.get('/api/nations')
+def list_nations(q: str = '', confederation: Optional[int] = None, leagues: Optional[str] = None,
+                 in_basket: Optional[str] = None, sort: Optional[str] = None, dir: Optional[str] = None,
+                 page: int = 1, size: int = views.DEFAULT_PAGE_SIZE):
+    _, idx = ready()
+    rows = [idx.nations[i] for i in idx.search('nations', list(idx.nations), q)]
+    if confederation is not None:
+        rows = [r for r in rows if r['confederation'] == confederation]
+    if (want := _yes_no(leagues)) is not None:
+        rows = [r for r in rows if (r['league_count'] > 0) == want]
+    rows = _basket_filter('nations', rows, in_basket)
+    out = views.page(rows, 'nations', sort, dir, page, size)
+    out['items'] = _with_basket('nations', out['items'])
+    return out
+
+
+@app.get('/api/stadiums')
+def list_stadiums(q: str = '', country: Optional[int] = None, home: Optional[str] = None,
+                  in_basket: Optional[str] = None, sort: Optional[str] = None, dir: Optional[str] = None,
+                  page: int = 1, size: int = views.DEFAULT_PAGE_SIZE):
+    _, idx = ready()
+    rows = [idx.stadiums[i] for i in idx.search('stadiums', list(idx.stadiums), q)]
+    if country is not None:
+        rows = [r for r in rows if r['country_id'] == country]
+    if (want := _yes_no(home)) is not None:
+        rows = [r for r in rows if (r['home_team_id'] is not None) == want]
+    rows = _basket_filter('stadiums', rows, in_basket)
+    out = views.page(rows, 'stadiums', sort, dir, page, size)
+    out['items'] = _with_basket('stadiums', out['items'])
+    return out
 
 
 @app.get('/api/leagues')
@@ -217,12 +255,14 @@ def list_players(q: str = '', team: Optional[int] = None, league: Optional[int] 
 def filter_options():
     """Small lists for the filter selects: leagues, nations (with players) and positions."""
     src, idx = ready()
-    used_nations = {r['nationality_id'] for r in idx.players.values()} | {r['country_id'] for r in idx.leagues.values()}
+    used_nations = ({r['nationality_id'] for r in idx.players.values()} | {r['country_id'] for r in idx.leagues.values()}
+                    | {r['country_id'] for r in idx.stadiums.values()})
     return {
         'leagues': sorted(({'id': r['id'], 'name': r['name']} for r in idx.leagues.values()),
                           key=lambda r: views.fold(r['name'])),
-        'nations': sorted(({'id': nid, 'name': n.get('nationname')} for nid, n in src.nations.items()
+        'nations': sorted(({'id': nid, 'name': idx.nations[nid]['name']} for nid in src.nations
                            if nid in used_nations), key=lambda r: views.fold(r['name'])),
+        'confederations': sorted({r['confederation'] for r in idx.nations.values() if r['confederation'] is not None}),
         'positions': [{'id': i, 'name': n} for i, n in enumerate(fifa14.POSITIONS[:28])],
         'levels': sorted({r['level'] for r in idx.leagues.values() if r['level'] is not None}),
     }
@@ -232,7 +272,8 @@ def filter_options():
 def lookup(kind: str, ids: str = ''):
     """Names of a few items by id (filter chips, links)."""
     _, idx = ready()
-    table = {'leagues': idx.leagues, 'teams': idx.teams, 'players': idx.players}.get(kind)
+    table = {'nations': idx.nations, 'leagues': idx.leagues, 'teams': idx.teams, 'players': idx.players,
+             'stadiums': idx.stadiums}.get(kind)
     if table is None:
         raise ApiError(400, 'bad_request', kind)
     wanted = [int(x) for x in ids.split(',') if x.strip().lstrip('-').isdigit()][:200]
@@ -243,6 +284,41 @@ def lookup(kind: str, ids: str = ''):
 
 def _raw(row: dict | None) -> dict:
     return dict(row or {})
+
+
+@app.get('/api/nations/{nid}')
+def nation_detail(nid: int):
+    src, idx = ready()
+    if nid not in idx.nations:
+        raise ApiError(404, 'not_found')
+    leagues = sorted((idx.leagues[lid] for lid in src.nation_leagues.get(nid, []) if lid in idx.leagues),
+                     key=lambda r: (r['level'] if r['level'] is not None else 99, views.fold(r['name'])))
+    team = idx.nations[nid]['national_team_id']
+    audio = (src.related_rows('nationid', nid).get('audionation') or [None])[0]
+    return {
+        **_with_basket('nations', [idx.nations[nid]])[0],
+        'names': src.nation_all_names(nid),
+        'national_team': {'id': team, 'name': idx.teams[team]['name']} if team in idx.teams else None,
+        'leagues': _with_basket('leagues', leagues),
+        'flag_files': [{'path': p, 'where': src.files.where(p)} for p in src.flag_files(nid)],
+        'audio': _raw(audio) if audio else None,
+        'raw': _raw(src.nations[nid]),
+    }
+
+
+@app.get('/api/stadiums/{sid}')
+def stadium_detail(sid: int):
+    src, idx = ready()
+    if sid not in idx.stadiums:
+        raise ApiError(404, 'not_found')
+    teams = sorted((idx.teams[t] for t in src.stadium_teams.get(sid, []) if t in idx.teams),
+                   key=lambda r: views.fold(r['name']))
+    return {
+        **_with_basket('stadiums', [idx.stadiums[sid]])[0],
+        'detail': idx.stadium(sid),
+        'teams': [{**r, 'stadium_custom_name': src.stadium_custom_names.get(r['id'])}
+                  for r in _with_basket('teams', teams)],
+    }
 
 
 @app.get('/api/leagues/{lid}')
@@ -289,6 +365,7 @@ def team_detail(tid: int):
         p = idx.players.get(ln['playerid'])
         if p:
             roster.append({**p, 'jersey_number': ln.get('jerseynumber'), 'link_position': ln.get('position'),
+                           'back_name': src.player_names(ln['playerid']).get('jersey'),
                            'link_position_name': fifa14.position_name(ln.get('position')),
                            'picked': ln['playerid'] in picked_players, 'in_basket': ln['playerid'] in inside})
     roster.sort(key=lambda r: (r['link_position'] if r['link_position'] is not None else 99, -(r['overall'] or 0)))
@@ -308,6 +385,13 @@ def team_detail(tid: int):
         'roster': roster,
         'captain': player_ref(row.get('captainid')),
         'takers': {k: player_ref(row.get(col)) for k, col in fifa14.TAKERS.items()},
+        'formation': src.formation(tid),
+        'club': {k: row.get(k) for k in fifa14.CLUB if k in row},
+        'rival': {'id': row['rivalteam'], 'name': idx.teams[row['rivalteam']]['name']}
+        if row.get('rivalteam') in idx.teams else None,
+        'tactics': {k: row.get(k) for k in fifa14.TACTICS if k in row},
+        'stadiums': [x for x in (idx.stadium(sid) for sid in src.team_stadiums.get(tid, [])) if x],
+        'stadium_custom_name': src.stadium_custom_names.get(tid),
         'raw': _raw(row),
     }
 
@@ -328,6 +412,12 @@ def player_detail(pid: int):
                       for p in (row.get(f'preferredposition{i}') for i in range(1, 5)) if isinstance(p, int) and p >= 0],
         'attributes': {name: row[col] for col, name in fifa14.ATTRIBUTES.items() if col in row},
         'appearance': {col: row[col] for col in fifa14.APPEARANCE if col in row},
+        'traits': fifa14.traits_of(row),
+        'all_traits': list(fifa14.TRAITS),
+        'accessories': {col: row[col] for col in fifa14.ACCESSORIES if col in row},
+        'animations': {col: row[col] for col in fifa14.ANIMATIONS if col in row},
+        'career': {'contract_until': row.get('contractvaliduntil'), 'joined': fifa14.to_date(row.get('playerjointeamdate')),
+                   'retiring': row.get('isretiring')},
         'teams': [{'id': ln['teamid'], 'name': idx.teams[ln['teamid']]['name'] if ln['teamid'] in idx.teams else None,
                    'jersey_number': ln.get('jerseynumber'), 'position': ln.get('position'),
                    'position_name': fifa14.position_name(ln.get('position')),
@@ -423,6 +513,23 @@ def flag_image(nid: int, size: Optional[int] = None):
     return _png(('flag', nid, _size(size)), _dds(src.flag_path(nid), _size(size)))
 
 
+@app.get('/api/image/stadium/{sid}/{variant}')
+def stadium_image(sid: int, variant: int, size: Optional[int] = None):
+    src, _ = ready()
+    path = (src.stadium_pictures(sid, 'large') or src.stadium_pictures(sid, 'small')).get(variant)
+    s = _size(size)
+
+    def make():
+        if not path:
+            return None
+        data = src.files.read(path)
+        if data is None:
+            return None
+        img = images.apt_picture(data)
+        return images.png(images.thumbnail(img, s) if s else img)
+    return _png(('stadium', sid, variant, s), make)
+
+
 @app.get('/api/image/kit/{tid}/{kit_type}/{part}')
 def kit_image(tid: int, kit_type: int, part: str, size: Optional[int] = None):
     src, _ = ready()
@@ -440,6 +547,115 @@ def kit_image(tid: int, kit_type: int, part: str, size: Optional[int] = None):
     return _png(('kit', tid, kit_type, part, s), make)
 
 
+# ---- 3D preview: a player of the game wearing a kit (game meshes as GLB, textures as PNG) -------------------------
+
+PREVIEW_HEADERS = {'Cache-Control': 'private, max-age=3600'}  # URLs carry the source token (?v=)
+
+
+def _preview(make, media_type: str):
+    ready()
+    try:
+        data = make()
+    except (preview.PreviewError, *images.UNREADABLE) as e:
+        raise ApiError(404, 'not_found', str(e))
+    return Response(data, media_type=media_type, headers=PREVIEW_HEADERS)
+
+
+@app.get('/api/preview/look/{pid}')
+def preview_look(pid: int):
+    """How the preview dresses a player (his head, face, hair, skin, boots, height); an unknown id = the model. A
+    player whose real face files exist shows them even when his row asks for a generic head (headclasscode 1): they
+    are what the package takes."""
+    src, _ = ready()
+    row = src.players.get(pid)
+    if row and src.has_face(pid):
+        row = {**row, 'headclasscode': 0}
+    out = preview.look(src.files, pid if row else None, row)
+    out['generic_in_game'] = bool(row) and src.players[pid].get('headclasscode') != 0 and out['real']
+    return out
+
+
+@app.get('/api/preview/mesh/{part}/{code}.glb')
+def preview_mesh(part: str, code: int, collar: int = 0, real: bool = False):
+    src, _ = ready()
+    return _preview(lambda: preview.mesh_glb(src.files, part, code, collar, real), 'model/gltf-binary')
+
+
+@app.get('/api/preview/texture/{name}/{code}.png')
+def preview_texture(name: str, code: int, real: bool = False):
+    src, _ = ready()
+    return _preview(lambda: preview.texture_png(src.files, name, code, real), 'image/png')
+
+
+@app.get('/api/preview/face/{key}.png')
+def preview_face(key: str):
+    src, _ = ready()
+    return _preview(lambda: preview.face_png(src.files, key), 'image/png')
+
+
+@app.get('/api/preview/kit-print/{tid}/{kind}.png')
+def preview_kit_print(tid: int, kind: int, part: str = 'jersey', number: Optional[int] = None,
+                      name: Optional[str] = None):
+    """What the game draws over the kit's jersey or shorts texture (crest, name, numbers): a transparent picture with
+    the same UVs, with the name and number of the player who wears it."""
+    src, _ = ready()
+    if part not in images.KIT_TEXTURES:
+        raise ApiError(404, 'not_found')
+    path = src.kit_paths(tid).get(kind)
+    values = kitprint.print_of(src.current_kits(tid).get(kind) or {})
+    size = (1024, 1024) if part == 'jersey' else (1024, 512)
+
+    def make():
+        if not path:
+            raise preview.PreviewError(f'team {tid} kit {kind}')
+        img = kitprint.decal(src.files, src.files.read(path), part, size, values, number=number, name=name)
+        return images.png(img)
+    key = (source.token, 'kit-print', tid, kind, part, number, name)
+    return _preview(lambda: pictures.get(key, make), 'image/png')
+
+
+class StadiumCache:
+    """The last stadiums built (a big one takes seconds and tens of MB; the page asks for it once per time of day)."""
+
+    def __init__(self, limit=4):
+        self.items: OrderedDict = OrderedDict()
+        self.limit = limit
+        self.lock = Lock()
+        self.building = Lock()  # one at a time: two big stadiums at once would only double the wait
+
+    def get(self, key, make):
+        with self.lock:
+            if key in self.items:
+                self.items.move_to_end(key)
+                return self.items[key]
+        with self.building:
+            with self.lock:
+                if key in self.items:
+                    return self.items[key]
+            data = make()
+            with self.lock:
+                self.items[key] = data
+                while len(self.items) > self.limit:
+                    self.items.popitem(last=False)
+        return data
+
+
+stadium_models = StadiumCache()
+
+
+@app.get('/api/preview/stadium/{sid}.glb')
+def preview_stadium(sid: int, tod: int = 1):
+    """The stadium in 3D (stadium3d.glb); tod 1 = day textures, 3 = night."""
+    src, _ = ready()
+    if tod not in stadium3d.TIMES:
+        raise ApiError(404, 'not_found')
+    try:
+        data = stadium_models.get((source.token, sid, tod), lambda: stadium3d.glb(src.files, sid, tod))
+    except stadium3d.StadiumError as e:
+        raise ApiError(404, 'not_found', str(e))
+    return Response(data, media_type='model/gltf-binary', headers=PREVIEW_HEADERS)
+
+
 # ---- basket -------------------------------------------------------------------------------------------------------
 
 class BasketOp(BaseModel):
@@ -447,7 +663,7 @@ class BasketOp(BaseModel):
     args: dict[str, Any] = {}
 
 
-BASKET_OPS = {'add_league', 'remove_league', 'add_team', 'remove_team', 'set_team', 'pick', 'add_players',
+BASKET_OPS = {'add_stadium', 'remove_stadium', 'add_nation', 'remove_nation', 'add_league', 'remove_league', 'add_team', 'remove_team', 'set_team', 'pick', 'add_players',
               'remove_players', 'clear', 'set_form'}
 
 
@@ -471,6 +687,7 @@ def basket_view():
 
     def name(table, i):
         return table[i]['name'] if idx and i in table else None
+    nations = [{'id': i, 'name': name(idx.nations, i) if idx else None} for i in d['nations']]
     leagues = [{'id': i, 'name': name(idx.leagues, i) if idx else None} for i in d['leagues']]
     teams = []
     for k, v in d['teams'].items():
@@ -479,7 +696,8 @@ def basket_view():
                       'roster': idx.teams[tid]['player_count'] if idx and tid in idx.teams else None,
                       'crest_no_background': v['crest_no_background']})
     players = [{'id': i, 'name': name(idx.players, i) if idx else None} for i in d['players']]
-    return {'leagues': leagues, 'teams': teams, 'players': players, 'form': d['form'], 'counts': basket_counts()}
+    stadiums = [{'id': i, 'name': name(idx.stadiums, i) if idx else None} for i in d['stadiums']]
+    return {'nations': nations, 'leagues': leagues, 'teams': teams, 'stadiums': stadiums, 'players': players, 'form': d['form'], 'counts': basket_counts()}
 
 
 # ---- saved selections ---------------------------------------------------------------------------------------------
@@ -533,13 +751,14 @@ def start_export():
     src, _ = ready()
     form = basket.data['form']
     selection = basket.selection()
-    if not (selection.leagues or selection.teams or selection.players):
+    if not (selection.nations or selection.leagues or selection.teams or selection.players or selection.stadiums):
         raise ApiError(400, 'basket_empty')
     if form.get('credits_url') and not package.normalize_link(form['credits_url']):
         raise ApiError(400, 'invalid_link')
     options = package.Options(patch_name=form.get('patch_name', ''), credits=form.get('credits', ''),
                               credits_url=form.get('credits_url', ''),
                               include_originals=bool(form.get('include_originals', True)),
+                              include_stadiums=bool(form.get('include_stadiums', True)),
                               tool_version=settings.APP_VERSION)
     folder = settings.load().exports_dir()
     try:

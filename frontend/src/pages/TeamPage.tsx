@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { ScanFace } from 'lucide-react'
+import { Box, ScanFace } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -9,18 +9,23 @@ import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/api/client'
-import type { KitInfo, RosterRow, TeamDetail } from '@/api/types'
-import { BackButton, Badge, BasketButton, BasketCheck, Facts, OverallBadge, RawTable, Section } from '@/components/common/detail'
+import type { KitInfo, RosterRow, StadiumInfo, TeamDetail } from '@/api/types'
+import { Badge, BasketButton, BasketCheck, Facts, OverallBadge, RawTable, Section } from '@/components/common/detail'
 import { ColorDot, Crest, KitImage, Photo } from '@/components/common/pictures'
+import { FormationPitch } from '@/components/common/FormationPitch'
+import { Preview3D } from '@/components/common/Preview3D'
+import { Stadium3D, StadiumDatabase, StadiumDetails } from '@/components/common/stadium'
 import { LoadingBlock } from '@/components/layout/LoadingBlock'
 import { hasMessage, useI18n, type MessageKey } from '@/i18n'
+import { previewKit } from '@/lib/preview'
 import { useTab } from '@/lib/tabs'
 import { useBasketOp, useToken } from '@/state/queries'
+import { BackButton, usePageLabel } from '@/lib/back'
 
-const TABS = ['overview', 'roster', 'kits', 'raw'] as const
+const TABS = ['overview', 'roster', 'kits', 'stadium', 'raw'] as const
 
 /** Every name the game has for the item, labelled. */
-export function NameList({ names, prefix }: { names: Record<string, string>; prefix: 'teamName' | 'leagueName' | 'playerName' }) {
+export function NameList({ names, prefix }: { names: Record<string, string>; prefix: 'teamName' | 'leagueName' | 'playerName' | 'nationName' | 'stadiumName' }) {
   const { t } = useI18n()
   return (
     <Facts
@@ -45,6 +50,7 @@ export function TeamPage() {
   const id = Number(useParams().id)
   const token = useToken()
   const { data, error } = useQuery({ queryKey: ['team', token, id], queryFn: () => api.team(id), enabled: !!token })
+  usePageLabel(data?.name)
   const op = useBasketOp()
   const [tab, setTab] = useTab(TABS)
   if (error) return <p className="text-destructive">{error.message}</p>
@@ -52,7 +58,7 @@ export function TeamPage() {
   const nobg = data.in_basket && data.crest_no_background
   return (
     <div className="space-y-6">
-      <BackButton fallback="/teams" />
+      <BackButton fallback={{ to: '/teams', label: t('nav.teams') }} />
       <div className="flex flex-wrap items-center gap-5">
         <Crest id={id} size={256} available={data.has_crest} noBackground={nobg} className="size-24" />
         <div className="min-w-0 flex-1">
@@ -74,6 +80,7 @@ export function TeamPage() {
           <TabsTrigger value="overview">{t('tab.overview')}</TabsTrigger>
           <TabsTrigger value="roster">{t('tab.roster', { count: data.roster.length })}</TabsTrigger>
           <TabsTrigger value="kits">{t('tab.kits', { count: data.kits.length })}</TabsTrigger>
+          <TabsTrigger value="stadium">{t('tab.stadium')}</TabsTrigger>
           <TabsTrigger value="raw">{t('tab.raw')}</TabsTrigger>
         </TabsList>
         <TabsContent value="overview">
@@ -84,6 +91,9 @@ export function TeamPage() {
         </TabsContent>
         <TabsContent value="kits">
           <Kits data={data} />
+        </TabsContent>
+        <TabsContent value="stadium">
+          <Stadiums data={data} />
         </TabsContent>
         <TabsContent value="raw">
           <Section title={t('section.rawRow', { table: 'teams' })}>
@@ -147,15 +157,59 @@ function Overview({ data }: { data: TeamDetail }) {
             [t('col.leagues'), data.leagues.length ? data.leagues.map((l) => <Link key={l.id} to={`/leagues/${l.id}`} className="mr-2 hover:underline">{l.name}</Link>) : '—'],
             [t('teams.captain'), ref(data.captain)],
             ...Object.entries(data.takers).map(([k, v]) => [t(`taker.${k}` as MessageKey), ref(v)] as [string, React.ReactNode]),
+            [
+              t('teams.stadium'),
+              data.stadiums.length ? data.stadium_custom_name ?? data.stadiums.map((s) => s.name).join(', ') : '—',
+            ],
             [t('teams.crestFrom'), data.crest_where ?? '—'],
           ]}
         />
+      </Section>
+      <Section title={t('fieldGroup.club')}>
+        <Facts
+          items={[
+            ...Object.entries(data.club).map(([k, v]) => [label(t, k), k === 'transferbudget' && v !== null ? v.toLocaleString() : v] as [string, React.ReactNode]),
+            [t('field.rivalteam'), data.rival ? <Link key="r" to={`/teams/${data.rival.id}`} className="hover:underline">{data.rival.name}</Link> : '—'],
+          ]}
+        />
+      </Section>
+      <Section title={t('fieldGroup.tactics')}>
+        <Facts items={Object.entries(data.tactics).map(([k, v]) => [label(t, k), v] as [string, React.ReactNode])} />
       </Section>
     </div>
   )
 }
 
+/** A database column's label (field.<column>, as in the FIFA 14 Studio), else the column itself. */
+const label = (t: (k: MessageKey) => string, column: string) => (hasMessage(`field.${column}`) ? t(`field.${column}` as MessageKey) : column)
+
 function Roster({ data }: { data: TeamDetail }) {
+  return (
+    <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <RosterTable data={data} />
+      <Formation data={data} />
+    </div>
+  )
+}
+
+function Formation({ data }: { data: TeamDetail }) {
+  const { t } = useI18n()
+  const f = data.formation
+  return (
+    <Section title={f?.name ? `${t('squad.formation')}: ${f.name}` : t('squad.formation')} className="xl:sticky xl:top-0">
+      {f ? (
+        <>
+          <FormationPitch formation={f} roster={data.roster} />
+          <p className="mt-2 text-xs text-muted-foreground">{t('teams.formationHint')}</p>
+        </>
+      ) : (
+        <p className="text-sm text-muted-foreground">{t('teams.noFormation')}</p>
+      )}
+    </Section>
+  )
+}
+
+function RosterTable({ data }: { data: TeamDetail }) {
   const { t } = useI18n()
   const navigate = useNavigate()
   const op = useBasketOp()
@@ -248,27 +302,86 @@ function kitTitle(t: (k: MessageKey, p?: Record<string, unknown>) => string, kit
   return kit.role ? t(`kitRole.${kit.role}` as MessageKey) : t('kitRole.other', { type: kit.type })
 }
 
+/** The player whose face, name and number the preview shows: a goalkeeper for the goalkeeper kit, else the first
+ * outfield player of the squad (as the FIFA 14 Studio does). */
+function wearerOf(roster: RosterRow[], kind: number) {
+  const isKeeper = (r: RosterRow) => (r.link_position ?? r.position_code) === 0
+  const row = (kind === 2 ? roster.find(isKeeper) : roster.find((r) => !isKeeper(r))) ?? roster[0]
+  return { id: row?.id ?? 0, number: row?.jersey_number ?? (kind === 2 ? 1 : 10), name: row?.back_name || row?.name || null }
+}
+
 function Kits({ data }: { data: TeamDetail }) {
   const { t } = useI18n()
+  const token = useToken()
+  const [shown, setShown] = useState<number | null>(null)
   if (!data.kits.length) return <p className="py-6 text-sm text-muted-foreground">{t('teams.noKits')}</p>
+  const kit = data.kits.find((k) => k.type === shown) ?? data.kits[0]
+  const wearer = wearerOf(data.roster, kit.type)
+  const preview = previewKit(token, data.id, kit.type, { collar: kit.fields.jerseycollargeometrytype ?? 0, number: wearer.number, name: wearer.name })
   return (
-    <div className="grid gap-6 xl:grid-cols-2">
-      {data.kits.map((kit) => (
-        <Section key={kit.type} title={kitTitle(t, kit)} action={<Badge>{kit.where ?? '—'}</Badge>}>
-          <div className="flex flex-wrap gap-4">
-            <KitImage team={data.id} type={kit.type} part="jersey" size={512} className="size-56 rounded border bg-muted/40" />
-            <KitImage team={data.id} type={kit.type} part="shorts" size={512} className="h-56 w-56 rounded border bg-muted/40" />
-          </div>
-          <div className="mt-4">
-            <Facts
-              items={[
-                [t('kit.nameColor'), kit.name_color ? <ColorDot key="n" rgb={kit.name_color} /> : '—'],
-                ...Object.entries(kit.fields).map(([k, v]) => [KIT_FIELD_LABELS[k] ? t(KIT_FIELD_LABELS[k]) : k, v ?? '—'] as [string, React.ReactNode]),
-                [t('kit.file'), <span key="f" className="font-mono text-xs">{kit.source_path}</span>],
-              ]}
-            />
-          </div>
-        </Section>
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid gap-6 2xl:grid-cols-2">
+        {data.kits.map((k) => (
+          <Section
+            key={k.type}
+            title={kitTitle(t, k)}
+            className={k.type === kit.type ? 'ring-2 ring-primary/50' : undefined}
+            action={
+              <div className="flex items-center gap-2">
+                <Badge>{k.where ?? '—'}</Badge>
+                <Button size="sm" variant={k.type === kit.type ? 'default' : 'outline'} onClick={() => setShown(k.type)}>
+                  <Box /> {t('preview.show3d')}
+                </Button>
+              </div>
+            }
+          >
+            <div className="flex flex-wrap gap-4">
+              <KitImage team={data.id} type={k.type} part="jersey" size={512} className="size-56 rounded border bg-muted/40" />
+              <KitImage team={data.id} type={k.type} part="shorts" size={512} className="h-56 w-56 rounded border bg-muted/40" />
+            </div>
+            <div className="mt-4">
+              <Facts
+                items={[
+                  [t('kit.nameColor'), k.name_color ? <ColorDot key="n" rgb={k.name_color} /> : '—'],
+                  ...Object.entries(k.fields).map(([f, v]) => [KIT_FIELD_LABELS[f] ? t(KIT_FIELD_LABELS[f]) : f, v ?? '—'] as [string, React.ReactNode]),
+                  [t('kit.file'), <span key="f" className="font-mono text-xs">{k.source_path}</span>],
+                ]}
+              />
+            </div>
+          </Section>
+        ))}
+      </div>
+      <div className="space-y-2 rounded-lg border bg-card p-3 lg:sticky lg:top-0">
+        <div>
+          <p className="font-medium">{t('preview.kitTitle', { kit: kitTitle(t, kit) })}</p>
+          <p className="text-xs text-muted-foreground">{t('preview.kitHint')}</p>
+        </div>
+        <Preview3D kit={preview} wearer={wearer.id} />
+      </div>
+    </div>
+  )
+}
+
+function TeamStadium({ stadium, customName }: { stadium: StadiumInfo; customName: string | null }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="space-y-6">
+      <Stadium3D stadium={stadium} open={open} setOpen={setOpen} className={open ? 'h-[70vh]' : undefined} />
+      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+        <StadiumDetails stadium={stadium} customName={customName} />
+        <StadiumDatabase stadium={stadium} className="xl:grid-cols-1" />
+      </div>
+    </div>
+  )
+}
+
+function Stadiums({ data }: { data: TeamDetail }) {
+  const { t } = useI18n()
+  if (!data.stadiums.length) return <p className="py-6 text-sm text-muted-foreground">{t('teams.noStadium')}</p>
+  return (
+    <div className="space-y-6">
+      {data.stadiums.map((s) => (
+        <TeamStadium key={s.id} stadium={s} customName={data.stadiums.length === 1 ? data.stadium_custom_name : null} />
       ))}
     </div>
   )

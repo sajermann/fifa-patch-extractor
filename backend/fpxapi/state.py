@@ -88,7 +88,7 @@ class SourceHolder:
                 'language': src.language,
                 'languages': src.languages(),
                 'counts': {'leagues': len(src.leagues), 'teams': len(src.teams), 'players': len(src.players),
-                           'nations': len(src.nations)},
+                           'nations': len(src.nations), 'stadiums': len(src.stadiums)},
                 'suspect_birthdates': [fifa14.to_date(d) for d in sorted(src.suspect_birthdates)],
                 'warnings': src.warnings,
             })
@@ -98,10 +98,11 @@ class SourceHolder:
 # ---- the export basket ------------------------------------------------------------------------------------------
 
 def empty_basket() -> dict:
-    """leagues: [ids]; teams: {"<id>": {"players": [ids], "crest_no_background": bool}}; players: [ids] that go
-    without a team; form: the export screen's fields."""
-    return {'leagues': [], 'teams': {}, 'players': [],
-            'form': {'patch_name': '', 'credits': '', 'credits_url': '', 'include_originals': True}}
+    """nations: [ids]; leagues: [ids]; teams: {"<id>": {"players": [ids], "crest_no_background": bool}}; players:
+    [ids] that go without a team; stadiums: [ids] picked on their own; form: the export screen's fields."""
+    return {'nations': [], 'leagues': [], 'teams': {}, 'players': [], 'stadiums': [],
+            'form': {'patch_name': '', 'credits': '', 'credits_url': '', 'include_originals': True,
+                     'include_stadiums': True}}
 
 
 class Basket:
@@ -114,6 +115,7 @@ class Basket:
         data = _read_json(self.path)
         out = empty_basket()
         if isinstance(data, dict):
+            out['nations'] = [i for i in data.get('nations', []) if isinstance(i, int)]  # missing in older baskets
             out['leagues'] = [i for i in data.get('leagues', []) if isinstance(i, int)]
             teams = data.get('teams', {})
             if isinstance(teams, dict):
@@ -122,6 +124,7 @@ class Basket:
                         out['teams'][str(k)] = {'players': [i for i in v.get('players', []) if isinstance(i, int)],
                                                 'crest_no_background': bool(v.get('crest_no_background'))}
             out['players'] = [i for i in data.get('players', []) if isinstance(i, int)]
+            out['stadiums'] = [i for i in data.get('stadiums', []) if isinstance(i, int)]  # missing in older baskets
             if isinstance(data.get('form'), dict):
                 out['form'].update({k: v for k, v in data['form'].items() if k in out['form']})
         return out
@@ -145,6 +148,27 @@ class Basket:
         if src is None:
             raise ValueError('no game loaded')
         return src
+
+    def _op_add_nation(self, src, id: int):
+        """A country with its leagues (and their teams)."""
+        src = self._need(src)
+        if id not in self.data['nations']:
+            self.data['nations'].append(id)
+        for lid in src.nation_leagues.get(id, []):
+            self._op_add_league(src, lid)
+
+    def _op_remove_nation(self, src, id: int, with_leagues: bool = True):
+        self.data['nations'] = [i for i in self.data['nations'] if i != id]
+        if with_leagues and src:
+            for lid in src.nation_leagues.get(id, []):
+                self._op_remove_league(src, lid)
+
+    def _op_add_stadium(self, src, id: int):
+        if id not in self.data['stadiums']:
+            self.data['stadiums'].append(id)
+
+    def _op_remove_stadium(self, src, id: int):
+        self.data['stadiums'] = [i for i in self.data['stadiums'] if i != id]
 
     def _op_add_league(self, src, id: int):
         src = self._need(src)
@@ -212,7 +236,7 @@ class Basket:
     def _op_set_form(self, src, **fields):
         for k, v in fields.items():
             if k in self.data['form']:
-                self.data['form'][k] = bool(v) if k == 'include_originals' else str(v or '')
+                self.data['form'][k] = bool(v) if k.startswith('include_') else str(v or '')
 
     # ---- reading ----
 
@@ -224,10 +248,12 @@ class Basket:
 
     def selection(self) -> package.Selection:
         return package.Selection(
+            nations=list(self.data['nations']),
             leagues=list(self.data['leagues']),
             teams={int(k): package.TeamPick(list(v['players']), v['crest_no_background'])
                    for k, v in self.data['teams'].items()},
-            players=list(self.data['players']))
+            players=list(self.data['players']),
+            stadiums=list(self.data['stadiums']))
 
 
 # ---- saved selections -------------------------------------------------------------------------------------------
@@ -257,7 +283,9 @@ class Selections:
         for t in teams.values():
             players.update(t.get('players') or [])
         return {'id': d['id'], 'name': d['name'], 'created_at': d.get('created_at'), 'updated_at': d.get('updated_at'),
-                'source_path': d.get('source_path'), 'leagues': len(b.get('leagues') or []), 'teams': len(teams),
+                'source_path': d.get('source_path'), 'nations': len(b.get('nations') or []),
+                'leagues': len(b.get('leagues') or []), 'teams': len(teams),
+                'stadiums': len(b.get('stadiums') or []),
                 'players': len(players)}
 
     def list(self) -> list[dict]:
@@ -330,7 +358,7 @@ class Exports:
             package.write(pkg, path)
             m = pkg.manifest
             job.result = {'name': file_name, 'path': path, 'size': os.path.getsize(path), 'warnings': pkg.warnings,
-                          'counts': {k: len(m[k]) for k in ('leagues', 'teams', 'players', 'nations')}}
+                          'counts': {k: len(m[k]) for k in ('nations', 'leagues', 'teams', 'players', 'stadiums')}}
             job.state = 'done'
         except Exception as e:  # noqa: BLE001 - shown on the export screen; the cause goes to the log
             log.exception('export failed')

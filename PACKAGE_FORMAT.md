@@ -1,6 +1,6 @@
 # Package format (`fifa-patch-package`, version 1)
 
-A package is one zip file (`*.fifapkg.zip`) with the leagues, teams and players picked from a FIFA PC installation,
+A package is one zip file (`*.fifapkg.zip`) with the countries, leagues, teams, players and stadiums picked from a FIFA PC installation,
 **exactly as the source game has them**. The extractor never adapts a value to any other game or tool: whoever
 imports a package decides how to use each value (convert codes, clean names, resize pictures...).
 
@@ -13,9 +13,10 @@ teams/<id>/crest.png               crest, decoded (crest-no-background.png when 
 teams/<id>/kits/<type>/jersey.png  kit textures, decoded (shorts.png beside it)
 players/<id>/photo.png             player photo, decoded
 nations/<id>/flag.png              flag, decoded
+stadiums/<id>/picture-<n>.png      stadium picture of the menus, decoded (n = the game's picture variant)
 game/<game path>                   files as the game reads them (chunked containers already unpacked):
-                                   always the fonts and face files; the original pictures and kits too
-                                   when "includes_originals" is true
+                                   always the fonts, face and stadium scene files; the original pictures,
+                                   kits and the other flag files too when "includes_originals" is true
 ```
 
 `<id>` is always the id of the source database. `<game path>` is the path inside the game folder, lower case with
@@ -36,8 +37,9 @@ game/<game path>                   files as the game reads them (chunked contain
   "tool": { "name": "fifa-patch-extractor", "version": "0.1.0" },
   "created_at": "2026-01-01T12:00:00+00:00",
   "includes_originals": true,
+  "includes_stadiums": true,           // the stadiums of the exported teams went too
   "credits": { "text": "…", "url": "https://…" } | null,
-  "leagues": [League], "teams": [Team], "players": [Player], "nations": [Nation]
+  "leagues": [League], "teams": [Team], "players": [Player], "nations": [Nation], "stadiums": [Stadium]
 }
 ```
 
@@ -65,6 +67,8 @@ values as stored (integers already include the field's range offset, as the game
 | `crest` | `{image, source_path, original?, image_no_background?, preferred?}` (`preferred: "no_background"` when the user asked for it) |
 | `kits[]` | `type` (kit type id), `role` (`home`, `away`, `goalkeeper` or null), `jersey`, `shorts`, `source_path`, `original?`, `print_positions` (8 rectangles `[u0, v0, u1, v1]`: crest, back number, front number, name, name arc center, name arc tangent, shorts crest, shorts number), `colors`, `name_color`, `name_font {id, file?, family_name?}`, `name_layout`, `name_case`, `back_name_placement`, `number_font {id, color, file?, ink_color?}`, `front_number_placement`, `shorts_number_font {…}`, `shorts_number_placement`, `collar` |
 | `roster[]` | the exported players: `player_id`, `jersey_number`, `position` (the game's code, 28 = substitute, 29 = reserve), `position_name` |
+| `formation` | `{id, name, base, positions[]}`: the team's `formations` row (base = which of the game's generic formations; each position `{code, name, x, y}`, 0-1 with the own goal at y 0), or null |
+| `stadium_ids`, `stadium_custom_name` | stadiums of the team in the source (`teamstadiumlinks`) and the name it gives its stadium (`stadiumassignments`), or null |
 | `captain_id`, `takers` | ids as in the database (`penalty`, `free_kick`, `long_free_kick`, `left_corner`, `right_corner`); they may point to players that are not in the package |
 | `raw` | rows with this `teamid` (only the exported `teamplayerlinks`) + every `teamkits` row of the team |
 
@@ -79,6 +83,7 @@ values as stored (integers already include the field's range offset, as the game
 | `height`, `weight`, `preferred_foot` | as in the database (`right` / `left`) |
 | `positions[]` | `{code, name}` of the preferred positions |
 | `nationality_id` | nation id of the source (see `nations`) |
+| `traits` | the trait keys the player has (bits of `trait1`/`trait2`: `leadership`, `finesse_shot`, ...) |
 | `attributes` | ratings with neutral names (`acceleration`, `sprint_speed`, `finishing`, ..., `overall`, `potential`, `skill_moves`, `weak_foot`) |
 | `appearance` | appearance codes as the game stores them (`headtypecode`, `hairtypecode`, `skintonecode`, ...) |
 | `photo` | `{image, source_path, original?}` or null |
@@ -88,7 +93,30 @@ values as stored (integers already include the field's range offset, as the game
 
 ### Nation
 
-`name`, `national_team_id`, `confederation`, `flag`, `raw` — the nations referenced by the leagues and players.
+The countries picked on their own and every country referenced by the leagues, teams, players and stadiums.
+
+| field | meaning |
+|---|---|
+| `name` | the `nations` row's name |
+| `names` | `database`, `full`, `abbr3` (language database; missing ones left out) |
+| `national_team_id`, `confederation`, `top_tier` | from the `nations` row |
+| `league_ids` | every league of the country in the source (`leagues.countryid`; not only the exported ones) |
+| `flag` | `{image, source_path, original?}` of the big flag (`flags512x512`) |
+| `flag_files` | the other flag files of the game (`cardflags`, `countryflags`, `miniflags`), only with originals |
+| `raw` | rows with this `nationid` (`nations`, `audionation` = commentary and crowd sound regions, `rowteamnationlinks`) |
+
+### Stadium
+
+The stadiums of the exported teams (when the export asked for them; a stadium shared by teams goes once).
+
+| field | meaning |
+|---|---|
+| `names` | `database` (the `stadiums` row), `full` (language database) |
+| `capacity`, `year_built`, `country_nation_id`, `home_team_id` | from the `stadiums` row (`home_team_id` null = no home team) |
+| `team_ids` | every team that plays there in the source |
+| `pictures[]` | `{variant, image, source_path, original?}`: the menu pictures, cut to the part the screen draws |
+| `files` | `{game path: zip path}` of the scene: model, textures, the variants some patches add per home team (`specificstadium_*`), crowd placement |
+| `raw` | rows with this `stadiumid` (`stadiums`, `teamstadiumlinks`, `audiostadium`; not fixtures or saves) |
 
 ## Versions
 

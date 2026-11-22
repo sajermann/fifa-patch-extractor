@@ -6,11 +6,13 @@ import { LeagueImage } from '@/components/common/pictures'
 import { useI18n } from '@/i18n'
 import { FilterBar, FilterSelect, LIST_PAGE, Pager, ScrollTable, SearchInput, SortHead, useListState } from '@/lib/list'
 import { useBasketOp, useList, useOptions } from '@/state/queries'
+import { usePageLabel } from '@/lib/back'
 
 const FILTERS = ['q', 'country', 'level', 'in_basket'] as const
 
 export function LeaguesPage() {
   const { t } = useI18n()
+  usePageLabel(t('nav.leagues'))
   const navigate = useNavigate()
   const list = useListState(FILTERS)
   const { data, isFetching } = useList('leagues', list.request, api.leagues)

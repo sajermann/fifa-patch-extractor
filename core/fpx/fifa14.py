@@ -31,12 +31,26 @@ LEAGUE_NAME_STRINGS = {
     'trophy': 'TrophyName_',
     'trophy_abbr15': 'TrophyName_Abbr15_',
 }
+NATION_NAME_STRINGS = {'full': 'NationName_', 'abbr3': 'nationname_abbr3_'}
+STADIUM_NAME_STRINGS = {'full': 'StadiumName_'}
 
 # pictures (game paths; {} = the id)
 CREST = 'data/ui/imgassets/crest/l{}.dds'
 PHOTO = 'data/ui/imgassets/heads/p{}.dds'
 LEAGUE_IMAGES = {'logo': 'data/ui/imgassets/league/l{}.dds', 'banner': 'data/ui/imgassets/league512x128/l{}.dds'}
 FLAG_FOLDERS = re.compile(r'data/ui/imgassets/flags(\d+)x(\d+)/')
+# every file the game draws a country's flag with (three small Apt screens and plain DDS files)
+FLAG_FILES = ('data/ui/artassets/cardflags/{}.big', 'data/ui/artassets/countryflags/f_{}.big',
+              'data/ui/artassets/miniflags/flag_{}.big')
+# stadium files: the 3D scene (model, textures by time of day, the variants some patches add per home team), where
+# the crowd sits, and the pictures of the menus (Apt archives with one texture; 0, 1, 3, 4 = the picture's variant)
+STADIUM_FOLDER = 'data/sceneassets/stadium/'
+STADIUM_SCENE = re.compile(r'data/sceneassets/stadium/(?:specific)?stadium_(\d+)[._][^/]*$')
+CROWD_FOLDER = 'data/sceneassets/crowdplacement/'
+STADIUM_CROWD = re.compile(r'data/sceneassets/crowdplacement/crowd_(\d+)_[^/]*$')
+STADIUM_PICTURE_FOLDERS = {'large': 'data/ui/artassets/stadiumsbig/', 'small': 'data/ui/artassets/stadium/'}
+STADIUM_PICTURES = {'large': re.compile(r'data/ui/artassets/stadiumsbig/st_(\d+)_(\d+)\.big$'),
+                    'small': re.compile(r'data/ui/artassets/stadium/stadium_(\d+)_(\d+)\.big$')}
 KIT = 'data/sceneassets/kit/kit_{}_{}_0.rx3'  # team, kit type
 NAME_FONT = 'data/sceneassets/jerseyfonts/font_{}.ttf'
 NUMBER_FONT = 'data/sceneassets/kitnumbers/kitnumbers_{}_{}.rx3'  # font, palette color
@@ -69,6 +83,30 @@ APPEARANCE = ('headtypecode', 'headclasscode', 'hairtypecode', 'haircolorcode', 
               'facialhairtypecode', 'facialhaircolorcode', 'eyecolorcode', 'eyebrowcode', 'sideburnscode',
               'bodytypecode', 'shoetypecode', 'shoecolorcode1', 'shoecolorcode2', 'gkglovetypecode',
               'jerseystylecode', 'jerseysleevelengthcode', 'socklengthcode', 'hashighqualityhead')
+# traits: bits of trait1 / trait2 (bit = position in the tuple)
+TRAITS1 = ('inflexible', 'long_throws', 'powerful_free_kicks', 'diver', 'injury_prone', 'injury_free',
+           'avoids_weak_foot', 'dives_into_tackles', 'beat_defensive_line', 'selfish', 'leadership',
+           'argues_with_officials', 'early_crosser', 'finesse_shot', 'flair', 'long_passer', 'long_shot_taker',
+           'technical_dribbler', 'playmaker', 'pushes_up_for_corners', 'puncher', 'gk_long_thrower', 'power_header',
+           'gk_one_on_one', 'giant_throw', 'outside_foot_shot', 'crowd_favourite', 'swerve_passer', 'second_wind',
+           'acrobatic_clearance')
+TRAITS2 = ('fancy_feet', 'fancy_passes', 'fancy_flicks', 'stutter_penalty', 'chipped_penalty', 'bicycle_kicks',
+           'diving_header', 'driven_pass', 'gk_flat_kick', 'one_club_player', 'team_player')
+TRAITS = {**{k: ('trait1', i) for i, k in enumerate(TRAITS1)}, **{k: ('trait2', i) for i, k in enumerate(TRAITS2)}}
+ACCESSORIES = tuple(f'{kind}{n}' for n in (1, 2, 3, 4) for kind in ('accessorycode', 'accessorycolourcode'))
+ANIMATIONS = ('runningcode1', 'runningcode2', 'finishingcode1', 'finishingcode2', 'animfreekickstartposcode',
+              'animpenaltieskickstylecode', 'animpenaltiesmotionstylecode', 'animpenaltiesstartposcode', 'gkkickstyle',
+              'gksavetype', 'faceposercode')
+CLUB = ('domesticprestige', 'internationalprestige', 'transferbudget')
+TACTICS = ('busbuildupspeed', 'buspassing', 'busdribbling', 'buspositioning', 'cccrossing', 'ccpassing', 'ccshooting',
+           'ccpositioning', 'defmentality', 'defaggression', 'defteamwidth', 'defdefenderline')
+
+
+def traits_of(row: dict) -> list[str]:
+    """The trait keys a players row has (its trait1/trait2 bits)."""
+    return [key for key, (column, bit) in TRAITS.items() if int(row.get(column) or 0) >> bit & 1]
+
+
 TAKERS = {'penalty': 'penaltytakerid', 'free_kick': 'freekicktakerid', 'long_free_kick': 'longkicktakerid',
           'left_corner': 'leftcornerkicktakerid', 'right_corner': 'rightcornerkicktakerid'}
 
@@ -112,6 +150,8 @@ class Fifa14Source:
         self.warnings: list[str] = []  # language databases that could not be read
         self.team_names = self._names(TEAM_NAME_STRINGS, ('TeamName_', 'CT_TeamName_'))
         self.league_names = self._names(LEAGUE_NAME_STRINGS, ('LeagueName_', 'Labbr_', 'TrophyName_'))
+        self.nation_names = self._names(NATION_NAME_STRINGS, ('NationName_', 'nationname_abbr3_'))
+        self.stadium_names = self._names(STADIUM_NAME_STRINGS, ('StadiumName_',))
 
     # ---- database -------------------------------------------------------------------------------------------
 
@@ -146,6 +186,31 @@ class Fifa14Source:
         total = len(self.players) or 1
         self.suspect_birthdates = {d for d, n in counts.items() if n / total > SUSPECT_SHARE}
         self.national_teams = {n['teamid']: nid for nid, n in self.nations.items() if n.get('teamid', -1) >= 0}
+        self.nation_leagues: dict[int, list[int]] = {}
+        for lid, row in self.leagues.items():
+            self.nation_leagues.setdefault(row.get('countryid'), []).append(lid)
+        self.stadiums = {r['stadiumid']: r for r in self.rows('stadiums')}
+        self.team_stadiums: dict[int, list[int]] = {}
+        self.stadium_teams: dict[int, list[int]] = {}
+        for link in self.rows('teamstadiumlinks'):
+            self.team_stadiums.setdefault(link['teamid'], []).append(link['stadiumid'])
+            self.stadium_teams.setdefault(link['stadiumid'], []).append(link['teamid'])
+        self.stadium_custom_names = {r['teamid']: r['stadiumcustomname'] for r in self.rows('stadiumassignments')
+                                     if r.get('stadiumcustomname')}
+
+    def formation(self, tid: int) -> dict | None:
+        """The team's formation: name, which of the game's generic formations it is (base), and its 11 positions
+        (code, name, x/y on the pitch: 0-1, own goal at y 0)."""
+        row = next((r for r in self._by('formations', 'teamid').get(tid, [])), None)
+        if row is None:
+            return None
+        positions = []
+        for i in range(11):
+            code = row.get(f'position{i}')
+            positions.append({'code': code, 'name': position_name(code),
+                              'x': row.get(f'offset{i}x'), 'y': row.get(f'offset{i}y')})
+        return {'id': row.get('formationid'), 'name': row.get('formationname'), 'base': row.get('relativeformationid'),
+                'positions': positions}
 
     def tables_with(self, column: str) -> list[str]:
         return [name for name, t in self.tables.items() if column in t['fields']]
@@ -241,7 +306,23 @@ class Fifa14Source:
         return n.get('full') or n.get('database') or f'#{lid}'
 
     def nation_name(self, nid) -> str | None:
-        return (self.nations.get(nid) or {}).get('nationname') or None
+        """The country's name as the screens show it (language database), else the database name."""
+        return self.nation_names.get(nid, {}).get('full') or (self.nations.get(nid) or {}).get('nationname') or None
+
+    def nation_all_names(self, nid: int) -> dict[str, str]:
+        out = {'database': (self.nations.get(nid) or {}).get('nationname') or ''}
+        out.update(self.nation_names.get(nid, {}))
+        return {k: v for k, v in out.items() if v}
+
+    def stadium_all_names(self, sid: int) -> dict[str, str]:
+        out = {'database': (self.stadiums.get(sid) or {}).get('name') or ''}
+        out.update(self.stadium_names.get(sid, {}))
+        return {k: v for k, v in out.items() if v}
+
+    def stadium_display_name(self, sid: int) -> str:
+        """The database name first: it is the one the game shows (patches leave StadiumName_ texts behind)."""
+        n = self.stadium_all_names(sid)
+        return n.get('database') or n.get('full') or f'#{sid}'
 
     # ---- files --------------------------------------------------------------------------------------------
 
@@ -266,6 +347,47 @@ class Fifa14Source:
     def flag_path(self, nid) -> str | None:
         folder = self._flag_folder
         return self._existing(f'{folder}f_{nid}.dds') if folder else None
+
+    def flag_files(self, nid) -> list[str]:
+        """Game paths of every flag file of the country (the big picture first)."""
+        found = [self.flag_path(nid)] + [self._existing(p.format(nid)) for p in FLAG_FILES]
+        return [p for p in found if p]
+
+    # ---- stadiums -----------------------------------------------------------------------------------------------
+
+    def _by_stadium(self, folder: str, pattern: re.Pattern) -> dict[int, list[str]]:
+        out: dict[int, list[str]] = {}
+        for path in self.files.list(folder):
+            m = pattern.match(path)
+            if m:
+                out.setdefault(int(m.group(1)), []).append(path)
+        return out
+
+    @cached_property
+    def _stadium_files(self) -> dict[int, list[str]]:
+        out = self._by_stadium(STADIUM_FOLDER, STADIUM_SCENE)
+        for sid, paths in self._by_stadium(CROWD_FOLDER, STADIUM_CROWD).items():
+            out.setdefault(sid, []).extend(paths)
+        return out
+
+    @cached_property
+    def _stadium_pictures(self) -> dict[str, dict[int, dict[int, str]]]:
+        out: dict[str, dict[int, dict[int, str]]] = {}
+        for size, pattern in STADIUM_PICTURES.items():
+            found = out.setdefault(size, {})
+            for path in self.files.list(STADIUM_PICTURE_FOLDERS[size]):
+                m = pattern.match(path)
+                if m:
+                    found.setdefault(int(m.group(1)), {})[int(m.group(2))] = path
+        return out
+
+    def stadium_files(self, sid: int) -> list[str]:
+        """Game paths of the stadium's scene: models, textures and crowd placement (not the menu pictures)."""
+        return sorted(self._stadium_files.get(sid, []))
+
+    def stadium_pictures(self, sid: int, size: str = 'large') -> dict[int, str]:
+        """{variant: game path} of the menu pictures of the stadium ('large' or 'small')."""
+        return dict(sorted(self._stadium_pictures.get(size, {}).get(sid, {}).items()))
 
     def current_kits(self, tid: int) -> dict[int, dict]:
         """{kit type: teamkits row} of the current kits (year 0: the ones in kit_<team>_<type>_0.rx3)."""

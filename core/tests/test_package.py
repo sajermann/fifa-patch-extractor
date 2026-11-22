@@ -1,8 +1,10 @@
+import io
 import json
 import os
 import zipfile
 
 import pytest
+from PIL import Image
 
 import fakegame
 from fpx import package
@@ -50,6 +52,10 @@ def test_league_team_players(src):
     star = players[fakegame.STAR]
     assert star['names']['last'] == 'Plàyer' and star['birthdate'] and not star['birthdate_suspect']
     assert star['attributes']['overall'] == 95 and star['positions'][0]['name'] == 'ST'
+    assert star['traits'] == ['leadership', 'finesse_shot', 'one_club_player']
+    assert team['formation']['name'] == '4-4-2' and team['formation']['base'] == 8
+    assert [p['name'] for p in team['formation']['positions']][:3] == ['GK', 'RB', 'CB']
+    assert team['formation']['positions'][0]['y'] == pytest.approx(0.05)  # a float32 of the database
     assert star['face'] and all(f['file'] in pkg.files for f in star['face']['files'].values())
     assert star['photo']['image'] in pkg.files and star['photo']['original'] in pkg.files
     assert star['teams'] == [{'team_id': fakegame.TEAM, 'jersey_number': 10, 'position': 25, 'position_name': 'ST'}]
@@ -102,6 +108,73 @@ def test_without_originals(src):
     assert not any(n.startswith('game/data/ui/') or n.endswith('kit_7001_0_0.rx3') for n in pkg.files)
     star = pkg.manifest['players'][0]
     assert all(f['file'] in pkg.files for f in star['face']['files'].values())  # faces have no other form
+
+
+def test_nation_picked_alone(src):
+    """A country picked on its own: every name, its leagues, the flag files and the rows that belong to it."""
+    pkg = package.build(src, Selection(nations=[54]))
+    nation, = pkg.manifest['nations']
+    assert nation['name'] == 'Nowhereland'  # the database name, as before
+    assert nation['names'] == {'database': 'Nowhereland', 'full': 'Republic of Nowhere', 'abbr3': 'NWH'}
+    assert nation['league_ids'] == [fakegame.LEAGUE]
+    assert nation['flag']['image'] in pkg.files and nation['flag']['original'] in pkg.files
+    assert nation['flag_files'] == ['game/data/ui/artassets/countryflags/f_54.big']
+    assert nation['raw']['audionation'][0]['chantregionindex'] == 7
+    assert pkg.manifest['leagues'] == [] and pkg.manifest['stadiums'] == []
+
+
+def test_team_stadium(src):
+    pkg = package.build(src, Selection(teams={fakegame.TEAM: TeamPick([fakegame.STAR])}))
+    team = pkg.manifest['teams'][0]
+    assert team['stadium_ids'] == [fakegame.STADIUM] and team['stadium_custom_name'] == 'Custom Park'
+    stadium, = pkg.manifest['stadiums']
+    assert stadium['source_id'] == fakegame.STADIUM and stadium['names'] == {'database': 'Test Ground', 'full': 'Test Arena'}
+    assert stadium['capacity'] == 12345 and stadium['year_built'] == 1901
+    assert stadium['home_team_id'] == fakegame.TEAM and stadium['team_ids'] == [fakegame.TEAM]
+    assert stadium['country_nation_id'] == 54 and 54 in {n['source_id'] for n in pkg.manifest['nations']}
+    assert set(stadium['files']) == set(fakegame.STADIUM_FILES)  # the home team's dressing and the crowd too
+    assert all(pkg.files[z] == fakegame.STADIUM_FILES[p] for p, z in stadium['files'].items())
+    assert [p['variant'] for p in stadium['pictures']] == [1, 3]
+    picture = Image.open(io.BytesIO(pkg.files[stadium['pictures'][0]['image']]))
+    assert picture.size == fakegame.STADIUM_PICTURE  # cut to what the menu draws
+    assert stadium['raw']['stadiums'][0]['name'] == 'Test Ground'
+    assert pkg.manifest['includes_stadiums'] is True and pkg.warnings == []
+
+    without = package.build(src, Selection(teams={fakegame.TEAM: TeamPick([fakegame.STAR])}),
+                            Options(include_stadiums=False))
+    assert without.manifest['stadiums'] == [] and without.manifest['teams'][0]['stadium_ids'] == [fakegame.STADIUM]
+    assert not any('stadium' in n for n in without.files)
+
+    alone = package.build(src, Selection(stadiums=[fakegame.STADIUM]), Options(include_stadiums=False))
+    stadium, = alone.manifest['stadiums']  # picked on its own: goes even with the team stadiums off
+    assert stadium['source_id'] == fakegame.STADIUM and alone.manifest['teams'] == []
+    assert {n['source_id'] for n in alone.manifest['nations']} == {54}  # its country
+
+
+def test_stadium_3d(src):
+    """The scene as GLB: the wall with its texture found by name (the textures file has another order) and the baked
+    light on the 2nd UV set; the sky left out; meters."""
+    from fpx import stadium3d
+    assert stadium3d.available(src.files, fakegame.STADIUM) == [1]  # no night textures in the fake game
+    assert stadium3d.available(src.files, 999) == []
+    glb = stadium3d.glb(src.files, fakegame.STADIUM, 1)
+    length = int.from_bytes(glb[12:16], 'little')
+    doc = json.loads(glb[20:20 + length])
+    assert [n['name'] for n in doc['nodes']] == ['mesh0']  # the sky mesh is not there
+    mat, = doc['materials']
+    assert mat['name'] == 'diffuseopaque' and mat['occlusionTexture']['texCoord'] == 1
+    position = doc['accessors'][doc['meshes'][0]['primitives'][0]['attributes']['POSITION']]
+    assert position['max'] == [10.0, 5.0, 0.0]  # cm in the file, meters in the GLB
+    binary = glb[20 + length + 8:]
+
+    def color(tex):
+        view = doc['bufferViews'][doc['images'][doc['textures'][tex]['source']]['bufferView']]
+        data = binary[view['byteOffset']:view['byteOffset'] + view['byteLength']]
+        return Image.open(io.BytesIO(data)).convert('RGB').getpixel((4, 4))
+    assert color(mat['pbrMetallicRoughness']['baseColorTexture']['index'])[0] > 180  # 'wall' is red
+    assert color(mat['occlusionTexture']['index'])[0] in range(110, 150)  # 'lm_0' is grey
+    with pytest.raises(stadium3d.StadiumError):
+        stadium3d.glb(src.files, fakegame.STADIUM, 3)
 
 
 def test_write_zip(src, tmp_path):

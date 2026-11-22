@@ -19,6 +19,8 @@ STAR = 8001           # player with real face and photo, the best of TEAM
 KEEPER, BACKUP_KEEPER = 8002, 8003
 SHARED = 8016         # player in both teams
 SMALL_TEAM_PLAYERS = [SHARED] + list(range(8101, 8106))
+STADIUM = 3           # stadium of TEAM: names, scene files, crowd placement and two menu pictures
+STADIUM_PICTURE = (48, 20)  # the part of the 64x32 menu texture the screen draws
 
 COUNTS = {'leagues': 2, 'teams': 2, 'players': 21}
 
@@ -36,6 +38,9 @@ TEAMS = [
      'freekicktakerid': 0, 'longkicktakerid': 0, 'leftcornerkicktakerid': 0, 'rightcornerkicktakerid': 0},
 ]
 LEAGUE_TEAM_LINKS = [{'leagueid': LEAGUE, 'teamid': TEAM}, {'leagueid': PLAIN_LEAGUE, 'teamid': SMALL_TEAM}]
+STADIUMS = [{'stadiumid': STADIUM, 'name': 'Test Ground', 'capacity': 12345, 'yearbuilt': 1901, 'countrycode': 54,
+             'hometeamid': TEAM}]
+STADIUM_FILES: dict[str, bytes] = {}  # filled at the end of the module (the scene is built by stadium_scene)
 
 # language database: (stringid, text); the _upd database overrides the base one
 STRINGS = [
@@ -50,6 +55,9 @@ STRINGS = [
     (f'Labbr_{LEAGUE}', 'TST 1'),
     (f'TrophyName_{LEAGUE}', 'Test Premier Trophy'),
     (f'TrophyName_Abbr15_{LEAGUE}', 'Test Cup'),
+    ('NationName_54', 'Republic of Nowhere'),
+    ('nationname_abbr3_54', 'NWH'),
+    (f'StadiumName_{STADIUM}', 'Test Arena'),
     ('Other_String_1', 'ignored'),
 ]
 STRINGS_UPD = [(f'TeamName_{TEAM}', 'Test Athletic Club')]
@@ -110,7 +118,7 @@ def _kits():
 
 # ---- T3DB writer (the layout extractor.fifa_db reads) ------------------------------------------------------------
 
-STRING_SHORT, STRING_LONG, INT = 13, 14, 3  # field types: Huffman string (1 / 2-byte length), integer
+STRING_SHORT, STRING_LONG, INT, FLOAT = 13, 14, 3, 4  # field types: Huffman string (1 / 2-byte length), integer, float
 
 
 def _huffman(texts):
@@ -155,13 +163,15 @@ def _encode(text, codes, prefix_len):
 
 
 def _table(rows, types=None):
-    """Bytes of one table; fields = the keys of the rows (an int column or a string column)."""
+    """Bytes of one table; fields = the keys of the rows (an int, float or string column)."""
     types = dict(types or {})
     fields = list(dict.fromkeys(k for r in rows for k in r))
     for f in fields:
         if f not in types:
-            types[f] = STRING_SHORT if any(isinstance(r.get(f), str) for r in rows) else INT
-    texts = [r[f].encode('utf-8') for r in rows for f in fields if types[f] != INT and r.get(f) is not None]
+            types[f] = (STRING_SHORT if any(isinstance(r.get(f), str) for r in rows) else
+                        FLOAT if any(isinstance(r.get(f), float) for r in rows) else INT)
+    texts = [r[f].encode('utf-8') for r in rows for f in fields
+             if types[f] in (STRING_SHORT, STRING_LONG) and r.get(f) is not None]
     tree, codes = _huffman(texts)
     area = bytearray(tree)
     lows = {f: min([0] + [r.get(f) or 0 for r in rows]) for f in fields if types[f] == INT}
@@ -169,7 +179,9 @@ def _table(rows, types=None):
     for r in rows:
         value = 0
         for k, f in enumerate(fields):
-            if types[f] == INT:
+            if types[f] == FLOAT:
+                v = struct.unpack('<I', struct.pack('<f', float(r.get(f) or 0)))[0]
+            elif types[f] == INT:
                 v = (r.get(f) or 0) - lows[f]
             elif r.get(f) is None:
                 v = 0xFFFFFFFF
@@ -310,19 +322,52 @@ def build(root):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, 'wb') as f:
             f.write(blob)
-    _dds(os.path.join(img, 'flags512x512', 'f54.dds'), (16, 16), (0, 0, 255, 255))
-    _dds(os.path.join(img, 'flags64x64', 'f54.dds'), (8, 8), (0, 0, 255, 255))
+    _dds(os.path.join(img, 'flags512x512', 'f_54.dds'), (16, 16), (0, 0, 255, 255))
+    _dds(os.path.join(img, 'flags64x64', 'f_54.dds'), (8, 8), (0, 0, 255, 255))
+    art = os.path.join(data, 'ui', 'artassets')
+    write_big(os.path.join(art, 'countryflags', 'f_54.big'), {'2': _dds_bytes((8, 8), (0, 0, 255, 255))})
+    for game_path, blob in STADIUM_FILES.items():
+        path = os.path.join(root, 'Game', *game_path.split('/'))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'wb') as f:
+            f.write(blob)
+    for variant, color in ((1, (0, 120, 0, 255)), (3, (0, 0, 40, 255))):
+        write_big(os.path.join(art, 'stadiumsbig', f'st_{STADIUM}_{variant}.big'), apt_picture(color))
     return root
+
+
+def _dds_bytes(size, color):
+    buf = io.BytesIO()
+    Image.new('RGBA', size, color).save(buf, 'DDS')
+    return buf.getvalue()
+
+
+def apt_picture(color):
+    """{name: bytes} of a menu picture archive: the Apt data (with the drawn size) and a 64x32 texture."""
+    data = bytearray(b'Apt Data:1:7:4\x1a\0'.ljust(200, b'\0'))
+    data[164:172] = struct.pack('<ff', *STADIUM_PICTURE)
+    return {'0': bytes(data), '2': _dds_bytes((64, 32), color), '1': b'Apt constant file\x1a'}
+
+
+STAR_TRAITS = (1 << 10) | (1 << 13), 1 << 9  # trait1: leadership, finesse_shot; trait2: one_club_player
+FORMATION = {'teamid': TEAM, 'formationid': 50, 'formationname': '4-4-2', 'relativeformationid': 8,
+             **{f'position{i}': code for i, code in enumerate((0, 3, 5, 6, 7, 12, 13, 14, 16, 24, 26))},
+             **{f'offset{i}x': round(0.1 + 0.08 * i, 2) for i in range(11)},
+             **{f'offset{i}y': round(0.05 + 0.08 * i, 2) for i in range(11)}}
 
 
 def _tables():
     players, names, links = _players()
-    return {'leagues': LEAGUES, 'teams': TEAMS, 'leagueteamlinks': LEAGUE_TEAM_LINKS, 'players': players,
+    players[0]['trait1'], players[0]['trait2'] = STAR_TRAITS
+    return {'formations': [FORMATION, {**FORMATION, 'teamid': -1, 'formationid': 8}],
+            'leagues': LEAGUES, 'teams': TEAMS, 'leagueteamlinks': LEAGUE_TEAM_LINKS, 'players': players,
             'playernames': names, 'teamplayerlinks': links, 'nations': NATIONS, 'teamkits': _kits(),
             # a name edited in the database wins over the name table
             'editedplayernames': [{'playerid': KEEPER, 'firstname': 'Edited', 'surname': 'Keeper',
                                    'commonname': '', 'playerjerseyname': 'EDITED'}],
-            'teamstadiumlinks': [{'teamid': TEAM, 'stadiumid': 3}]}
+            'teamstadiumlinks': [{'teamid': TEAM, 'stadiumid': STADIUM}], 'stadiums': STADIUMS,
+            'stadiumassignments': [{'teamid': TEAM, 'stadiumcustomname': 'Custom Park'}],
+            'audionation': [{'nationid': 54, 'chantregionindex': 7, 'defaultcommlang': 'eng_us'}]}
 
 
 def number_font_rx3(color):
@@ -390,3 +435,74 @@ def build_archived(root):
     import shutil
     shutil.rmtree(tmp)
     return root
+
+
+# ---- a stadium scene (the layout fpx.stadium3d reads) -----------------------------------------------------------
+
+DECL, VERTICES, INDICES, NAMES = 0xC28193F0, 0x00587AA1, 0x005878F4, 0x4C9B9EB2
+MESH_INFO, MATERIAL, NODE = 0xD48D7880, 0x075BD958, 0x7E2480EC
+# the scene's texture list (what the materials index) and the textures file's own order (another one, as in the game)
+STADIUM_TEXTURES = ['lm_0', 'wall', 'sky_tex']
+STADIUM_TEXTURE_FILE_ORDER = ['wall', 'sky_tex', 'lm_0']
+
+
+def _rx3(sections):
+    off = 16 + 16 * len(sections)
+    table, body = b'', b''
+    for kind, blob in sections:
+        blob += b'\0' * (-len(blob) % 16)
+        table += struct.pack('<IIII', kind, off + len(body), len(blob), 0)
+        body += blob
+    return b'RX3l' + b'\0' * 8 + struct.pack('<I', len(sections)) + table + body
+
+
+def _names(entries):
+    out = b''
+    for kind, name in entries:
+        b = name.encode() + b'\0'
+        out += struct.pack('<II', kind, len(b)) + b
+    return struct.pack('<IIII', 0, len(entries), 0, 0) + out
+
+
+def stadium_scene():
+    """Two meshes: a wall (a quad, 20 m wide, material 0 = diffuse + baked light) and the sky (material 1, left out
+    of the preview); one scene node with both."""
+    decl = b'\0' * 16 + b'p0:00:00:0001:3f32 t0:0C:00:0001:2f32 t1:14:00:0001:2f32\0'
+    quad = [(-1000, 0, 0, 0, 0, 0, 0), (1000, 0, 0, 1, 0, 1, 0), (1000, 500, 0, 1, 1, 1, 1), (-1000, 500, 0, 0, 1, 0, 1)]
+    verts = b''.join(struct.pack('<7f', *v) for v in quad)
+    vb = struct.pack('<IIII', len(verts) + 16, 4, 28, 0) + verts
+    idx = struct.pack('<6H', 0, 1, 2, 0, 2, 3)
+    ib = struct.pack('<II', len(idx) + 16, 6) + bytes([2]) + b'\0' * 7 + idx
+
+    def material(shader, slots):
+        body = shader.encode() + b'\0' + b''.join(n.encode() + b'\0' + struct.pack('<I', i) for n, i in slots)
+        return struct.pack('<IIII', 16 + len(body), len(slots), 0, 0) + body
+
+    bbox = struct.pack('<8f', -10, 0, 0, 1, 10, 5, 0, 1)
+    node = struct.pack('<IIiI', 0, 1, -1, 0) + struct.pack('<16f', *[1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1])
+    node += bbox + struct.pack('<Ii', 2, -1) + bbox + struct.pack('<II', 0, 0) + bbox + struct.pack('<II', 1, 1)
+    names = [(MESH_INFO, 'WALL_Shape'), (MESH_INFO, 'SKY_Shape')] + [(TEXTURE_SECTION, n) for n in STADIUM_TEXTURES]
+    return _rx3([(DECL, decl), (DECL, decl), (INDICES, ib), (INDICES, ib), (VERTICES, vb), (VERTICES, vb),
+                 (MESH_INFO, struct.pack('<4I', 4, 0, 0, 0)), (MESH_INFO, struct.pack('<4I', 4, 0, 0, 0)),
+                 (NAMES, _names(names)),
+                 (MATERIAL, material('diffuseopaque', [('ambientTexture', 0), ('diffuseTexture', 1)])),
+                 (MATERIAL, material('sky', [('diffuseTexture', 2)])), (NODE, node)])
+
+
+def stadium_textures(colors):
+    """Textures file: {name: color} as 8x8 raw BGRA textures, in STADIUM_TEXTURE_FILE_ORDER."""
+    def texture(color):
+        raw = Image.new('RGBA', (8, 8), color + (255,)).tobytes('raw', 'BGRA')
+        return struct.pack('<IBBBBHHHH', 0, 0, 7, 0, 0, 8, 8, 0, 1) + struct.pack('<IIII', 0, 0, len(raw), 0) + raw
+    order = STADIUM_TEXTURE_FILE_ORDER
+    return _rx3([(TEXTURE_SECTION, texture(colors[n])) for n in order] +
+                [(NAMES_SECTION, _names([(0, n + '.Raster') for n in order]))])
+
+
+STADIUM_FILES.update({
+    f'data/sceneassets/stadium/stadium_{STADIUM}.rx3': stadium_scene(),
+    f'data/sceneassets/stadium/stadium_{STADIUM}_1_textures.rx3': stadium_textures(
+        {'wall': (200, 0, 0), 'lm_0': (128, 128, 128), 'sky_tex': (0, 0, 255)}),
+    f'data/sceneassets/stadium/specificstadium_{STADIUM}_1_0_{TEAM}.rx3': b'fake home dressing',
+    f'data/sceneassets/crowdplacement/crowd_{STADIUM}_1.dat': b'fake crowd',
+})

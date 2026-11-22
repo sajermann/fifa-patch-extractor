@@ -30,9 +30,11 @@ class TeamPick:
 
 @dataclass
 class Selection:
+    nations: list[int] = field(default_factory=list)  # countries picked on their own (the referenced ones go anyway)
     leagues: list[int] = field(default_factory=list)
     teams: dict[int, TeamPick] = field(default_factory=dict)
     players: list[int] = field(default_factory=list)  # players that go without a team
+    stadiums: list[int] = field(default_factory=list)  # stadiums picked on their own (go even without include_stadiums)
 
     def player_ids(self) -> list[int]:
         out = dict.fromkeys(self.players)
@@ -47,6 +49,7 @@ class Options:
     credits: str = ''
     credits_url: str = ''
     include_originals: bool = True
+    include_stadiums: bool = True  # the stadium of every exported team, with its scene files (large)
     tool_name: str = 'fifa-patch-extractor'
     tool_version: str = '0.0.0'
 
@@ -90,6 +93,10 @@ def _id(value):
     return value if isinstance(value, int) and value > 0 else None
 
 
+# tables with a stadiumid that describe matches or saves, not the stadium
+STADIUM_RAW_SKIP = ('fixtures', 'career_managerpref', 'teamstadiumlinkscache')
+
+
 class _Builder:
     def __init__(self, src: fifa14.Fifa14Source, selection: Selection, options: Options):
         self.src = src
@@ -98,6 +105,7 @@ class _Builder:
         self.files: dict[str, bytes] = {}
         self.warnings: list[str] = []
         self.nation_ids: set[int] = set()
+        self.stadium_ids: set[int] = set()
 
     # ---- files ----------------------------------------------------------------------------------------------
 
@@ -263,6 +271,9 @@ class _Builder:
         nation = self.src.national_teams.get(tid)
         if nation:
             self.nation_ids.add(nation)
+        stadiums = self.src.team_stadiums.get(tid, [])
+        if self.opt.include_stadiums:
+            self.stadium_ids.update(stadiums)
         return {
             'source_id': tid,
             'names': self.src.team_all_names(tid),
@@ -281,6 +292,9 @@ class _Builder:
                        for ln in links],
             'captain_id': _id(row.get('captainid')),
             'takers': {k: _id(row.get(col)) for k, col in fifa14.TAKERS.items()},
+            'formation': self.src.formation(tid),
+            'stadium_ids': stadiums,
+            'stadium_custom_name': self.src.stadium_custom_names.get(tid),
             'raw': raw,
         }
 
@@ -322,6 +336,7 @@ class _Builder:
             'positions': [{'code': p, 'name': fifa14.position_name(p)} for p in positions],
             'nationality_id': nationality,
             'attributes': {name: row[col] for col, name in fifa14.ATTRIBUTES.items() if col in row},
+            'traits': fifa14.traits_of(row),
             'appearance': {col: row[col] for col in fifa14.APPEARANCE if col in row},
             'photo': self._picture(self.src.photo_path(pid), f'players/{pid}/photo.png', f'player {pid} photo'),
             'face': face,
@@ -334,20 +349,76 @@ class _Builder:
     def nation(self, nid: int) -> dict | None:
         row = self.src.nations.get(nid)
         if row is None:
+            self.warnings.append(f'nation {nid}: not in the database')
             return None
-        return {
+        flag_path = self.src.flag_path(nid)
+        flag_files = []
+        if self.opt.include_originals:
+            for path in self.src.flag_files(nid):
+                if path != flag_path and (data := self._read(path, f'nation {nid} flag')) is not None:
+                    flag_files.append(self._original(path, data))
+        out = {
             'source_id': nid,
             'name': row.get('nationname'),
+            'names': self.src.nation_all_names(nid),
             'national_team_id': _id(row.get('teamid')),
             'confederation': row.get('confederation'),
-            'flag': self._picture(self.src.flag_path(nid), f'nations/{nid}/flag.png', f'nation {nid} flag'),
-            'raw': {'nations': [row]},
+            'top_tier': row.get('top_tier'),
+            'league_ids': self.src.nation_leagues.get(nid, []),
+            'flag': self._picture(flag_path, f'nations/{nid}/flag.png', f'nation {nid} flag'),
+            'raw': self.src.related_rows('nationid', nid),
+        }
+        if flag_files:
+            out['flag_files'] = flag_files
+        return out
+
+    def stadium(self, sid: int) -> dict | None:
+        row = self.src.stadiums.get(sid)
+        if row is None:
+            self.warnings.append(f'stadium {sid}: not in the database')
+            return None
+        country = _id(row.get('countrycode'))
+        if country:
+            self.nation_ids.add(country)
+        pictures = []
+        found = self.src.stadium_pictures(sid, 'large') or self.src.stadium_pictures(sid, 'small')
+        for variant, path in found.items():
+            pic = self._picture(path, f'stadiums/{sid}/picture-{variant}.png', f'stadium {sid} picture',
+                                decode=images.apt_picture)
+            if pic:
+                pictures.append({'variant': variant, **pic})
+        if self.opt.include_originals:
+            for size in ('large', 'small'):
+                for path in self.src.stadium_pictures(sid, size).values():
+                    if f'game/{path}' not in self.files and (data := self._read(path, f'stadium {sid}')) is not None:
+                        self._original(path, data)
+        files = {}
+        for path in self.src.stadium_files(sid):
+            data = self._read(path, f'stadium {sid}')
+            if data is not None:
+                files[path] = self._original(path, data)
+        return {
+            'source_id': sid,
+            'names': self.src.stadium_all_names(sid),
+            'capacity': row.get('capacity'),
+            'year_built': row.get('yearbuilt'),
+            'country_nation_id': country,
+            'home_team_id': _id(row.get('hometeamid')),
+            'team_ids': self.src.stadium_teams.get(sid, []),
+            'pictures': pictures,
+            'files': files,
+            'raw': self.src.related_rows('stadiumid', sid, skip=STADIUM_RAW_SKIP),
         }
 
     def build(self, progress=None) -> Package:
-        """progress(done, total), if given, is called after each league, team and player."""
+        """progress(done, total), if given, is called after each league, team, player and stadium."""
         league_ids, player_ids = list(dict.fromkeys(self.sel.leagues)), self.sel.player_ids()
-        total, done = len(league_ids) + len(self.sel.teams) + len(player_ids), 0
+        self.nation_ids.update(self.sel.nations)
+        self.stadium_ids.update(self.sel.stadiums)
+        team_stadiums = ({s for tid in self.sel.teams for s in self.src.team_stadiums.get(tid, [])}
+                         if self.opt.include_stadiums else set())
+        stadium_count = len(team_stadiums | set(self.sel.stadiums))
+        total, done = len(league_ids) + len(self.sel.teams) + len(player_ids) + stadium_count, 0
 
         def step(item):
             nonlocal done
@@ -360,6 +431,7 @@ class _Builder:
         teams = [x for x in (step(self.team(tid, pick)) for tid, pick in self.sel.teams.items()) if x]
         rosters = {t['source_id']: {r['player_id'] for r in t['roster']} for t in teams}
         players = [x for x in (step(self.player(pid, rosters)) for pid in player_ids) if x]
+        stadiums = [x for x in (step(self.stadium(sid)) for sid in sorted(self.stadium_ids)) if x]
         nations = [x for x in (self.nation(nid) for nid in sorted(self.nation_ids)) if x]
         credits = {k: v for k, v in {'text': (self.opt.credits or '').strip() or None,
                                      'url': normalize_link(self.opt.credits_url)}.items() if v}
@@ -376,11 +448,13 @@ class _Builder:
             'tool': {'name': self.opt.tool_name, 'version': self.opt.tool_version},
             'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'),
             'includes_originals': self.opt.include_originals,
+        'includes_stadiums': self.opt.include_stadiums,
             'credits': credits or None,
             'leagues': leagues,
             'teams': teams,
             'players': players,
             'nations': nations,
+            'stadiums': stadiums,
         }
         return Package(manifest, self.files, self.warnings)
 

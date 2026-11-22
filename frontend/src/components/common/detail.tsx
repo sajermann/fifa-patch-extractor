@@ -1,6 +1,5 @@
-import { ArrowLeft, PackageCheck, PackagePlus } from 'lucide-react'
+import { PackageCheck, PackagePlus } from 'lucide-react'
 import { useMemo, useState, type ReactNode } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -9,26 +8,15 @@ import type { Raw } from '@/api/types'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
-/** "←": back to where the user came from (the list keeps its filters in the URL), or to `fallback`. */
-export function BackButton({ fallback }: { fallback: string }) {
-  const { t } = useI18n()
-  const navigate = useNavigate()
-  const location = useLocation()
+/** A card with a title. `scroll`: the card takes the height it is given and its content scrolls inside it. */
+export function Section({ title, children, action, className, scroll }: { title: ReactNode; children: ReactNode; action?: ReactNode; className?: string; scroll?: boolean }) {
   return (
-    <Button variant="ghost" size="sm" onClick={() => (location.key !== 'default' ? navigate(-1) : navigate(fallback))}>
-      <ArrowLeft /> {t('common.back')}
-    </Button>
-  )
-}
-
-export function Section({ title, children, action, className }: { title: ReactNode; children: ReactNode; action?: ReactNode; className?: string }) {
-  return (
-    <Card className={className}>
+    <Card className={cn(scroll && 'flex min-h-0 flex-col', className)}>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
         <CardTitle className="text-base">{title}</CardTitle>
         {action}
       </CardHeader>
-      <CardContent>{children}</CardContent>
+      <CardContent className={scroll ? 'min-h-0 flex-1 overflow-auto' : undefined}>{children}</CardContent>
     </Card>
   )
 }

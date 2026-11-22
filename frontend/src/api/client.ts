@@ -6,11 +6,16 @@ import type {
   ExportFile,
   ExportJob,
   LeagueDetail,
+  NationDetail,
+  NationRow,
+  StadiumDetail,
+  StadiumRow,
   LeagueRow,
   Options,
   Page,
   PlayerDetail,
   PlayerRow,
+  PreviewLook,
   Ref,
   SavedSelection,
   SourceStatus,
@@ -77,15 +82,20 @@ export const api = {
   pickFolder: (initial?: string | null, title?: string) =>
     post<{ path: string | null }>('/api/dialog/folder', { initial, title }),
 
+  stadiums: (p: ListParams) => get<Page<StadiumRow>>(`/api/stadiums${query(p)}`),
+  nations: (p: ListParams) => get<Page<NationRow>>(`/api/nations${query(p)}`),
   leagues: (p: ListParams) => get<Page<LeagueRow>>(`/api/leagues${query(p)}`),
   teams: (p: ListParams) => get<Page<TeamRow>>(`/api/teams${query(p)}`),
   players: (p: ListParams) => get<Page<PlayerRow>>(`/api/players${query(p)}`),
   options: () => get<Options>('/api/options'),
-  lookup: (kind: 'leagues' | 'teams' | 'players', ids: number[]) =>
+  lookup: (kind: 'stadiums' | 'nations' | 'leagues' | 'teams' | 'players', ids: number[]) =>
     get<Ref[]>(`/api/lookup${query({ kind, ids: ids.join(',') })}`),
+  stadium: (id: number) => get<StadiumDetail>(`/api/stadiums/${id}`),
+  nation: (id: number) => get<NationDetail>(`/api/nations/${id}`),
   league: (id: number) => get<LeagueDetail>(`/api/leagues/${id}`),
   team: (id: number) => get<TeamDetail>(`/api/teams/${id}`),
   player: (id: number) => get<PlayerDetail>(`/api/players/${id}`),
+  previewLook: (id: number) => get<PreviewLook>(`/api/preview/look/${id}`),
 
   basket: () => get<BasketView>('/api/basket'),
   basketOp: (op: string, args: Record<string, unknown> = {}) => post<BasketCounts>('/api/basket', { op, args }),

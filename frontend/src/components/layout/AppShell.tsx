@@ -1,4 +1,4 @@
-import { FolderOpen, Heart, Loader2, Package, Settings, Shield, Trophy, Users } from 'lucide-react'
+import { FolderOpen, Globe, Heart, Landmark, Loader2, Package, Settings, Shield, Trophy, Users } from 'lucide-react'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { useI18n, type MessageKey } from '@/i18n'
@@ -6,11 +6,14 @@ import { APP_NAME, APP_VERSION, AUTHOR_GITHUB, AUTHOR_NAME, DONATE_URL, REPO_URL
 import { cn } from '@/lib/utils'
 import { useStatus } from '@/state/queries'
 import { LoadingBlock } from './LoadingBlock'
+import { TrailTracker } from '@/lib/back'
 
-const NAV: { to: string; label: MessageKey; icon: typeof Trophy; count?: 'leagues' | 'teams' | 'players' }[] = [
+const NAV: { to: string; label: MessageKey; icon: typeof Trophy }[] = [
+  { to: '/nations', label: 'nav.nations', icon: Globe },
   { to: '/leagues', label: 'nav.leagues', icon: Trophy },
   { to: '/teams', label: 'nav.teams', icon: Shield },
   { to: '/players', label: 'nav.players', icon: Users },
+  { to: '/stadiums', label: 'nav.stadiums', icon: Landmark },
 ]
 
 function NavItem({ to, label, icon: Icon, extra }: { to: string; label: MessageKey; icon: typeof Trophy; extra?: React.ReactNode }) {
@@ -52,7 +55,7 @@ export function AppShell() {
   const status = useStatus().data
   const { pathname } = useLocation()
   const basket = status?.basket
-  const total = basket ? basket.leagues + basket.teams + basket.players : 0
+  const total = basket ? basket.nations + basket.leagues + basket.teams + basket.players + basket.stadiums : 0
   const source = status?.source
   return (
     <div className="flex h-svh overflow-hidden">
@@ -68,7 +71,7 @@ export function AppShell() {
           <NavItem to="/source" label="nav.source" icon={FolderOpen} extra={source?.state === 'loading' ? <Loader2 className="size-3.5 animate-spin" /> : undefined} />
           <div className="my-2 border-t" />
           {NAV.map((n) => (
-            <NavItem key={n.to} {...n} extra={source?.counts ? <span className="text-xs text-muted-foreground tabular-nums">{source.counts[n.to.slice(1) as 'leagues' | 'teams' | 'players']}</span> : undefined} />
+            <NavItem key={n.to} {...n} extra={source?.counts ? <span className="text-xs text-muted-foreground tabular-nums">{source.counts[n.to.slice(1) as 'nations' | 'leagues' | 'teams' | 'players' | 'stadiums']}</span> : undefined} />
           ))}
           <div className="my-2 border-t" />
           <NavItem
@@ -120,10 +123,11 @@ export function AppShell() {
           </span>
           {basket && total > 0 && (
             <NavLink to="/export" className="text-xs text-muted-foreground hover:text-foreground">
-              {t('header.basket', { leagues: basket.leagues, teams: basket.teams, players: basket.players })}
+              {t('header.basket', { stadiums: basket.stadiums, nations: basket.nations, leagues: basket.leagues, teams: basket.teams, players: basket.players })}
             </NavLink>
           )}
         </header>
+        <TrailTracker />
         <main key={pathname.split('/')[1]} className="min-h-0 flex-1 overflow-auto p-6">
           <Outlet />
         </main>

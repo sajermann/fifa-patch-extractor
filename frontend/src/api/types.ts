@@ -9,7 +9,7 @@ export interface SourceStatus {
   database_from?: string
   language?: string
   languages?: string[]
-  counts?: { leagues: number; teams: number; players: number; nations: number }
+  counts?: { leagues: number; teams: number; players: number; nations: number; stadiums: number }
   suspect_birthdates?: (string | null)[]
   warnings?: string[]
 }
@@ -23,6 +23,8 @@ export interface Config {
 }
 
 export interface BasketCounts {
+  nations: number
+  stadiums: number
   leagues: number
   teams: number
   players: number
@@ -44,6 +46,37 @@ export interface Page<T> {
   pages: number
   sort: string
   dir: 'asc' | 'desc'
+}
+
+export interface NationRow {
+  id: number
+  name: string
+  database_name: string | null
+  abbr3: string | null
+  confederation: number | null
+  top_tier: number | null
+  league_count: number
+  player_count: number
+  national_team_id: number | null
+  has_flag: boolean
+  in_basket: boolean
+}
+
+export interface StadiumRow {
+  id: number
+  name: string
+  /** the StadiumName_ text of the language database (patches often leave it behind) */
+  language_name: string | null
+  capacity: number | null
+  country_id: number | null
+  country: string | null
+  home_team_id: number | null
+  home_team: string | null
+  team_count: number
+  /** first picture variant of the menus (lists), or null */
+  picture: number | null
+  has_3d: boolean
+  in_basket: boolean
 }
 
 export interface LeagueRow {
@@ -104,6 +137,37 @@ export interface LeagueDetail extends LeagueRow {
   raw: Raw
 }
 
+export interface NationDetail extends NationRow {
+  names: Record<string, string>
+  national_team: Ref | null
+  leagues: LeagueRow[]
+  flag_files: { path: string; where: string | null }[]
+  audio: Raw | null
+  raw: Raw
+}
+
+export interface StadiumInfo {
+  id: number
+  name: string
+  names: Record<string, string>
+  capacity: number | null
+  year_built: number | null
+  country_id: number | null
+  country: string | null
+  home_team: Ref | null
+  team_count: number
+  pictures: number[]
+  files: { path: string; where: string | null }[]
+  /** times of day the 3D preview can show (1 = day, 3 = night); empty = no 3D files */
+  times: number[]
+  raw: Raw
+}
+
+export interface StadiumDetail extends StadiumRow {
+  detail: StadiumInfo
+  teams: (TeamRow & { stadium_custom_name: string | null })[]
+}
+
 export interface KitInfo {
   type: number
   role: 'home' | 'away' | 'goalkeeper' | null
@@ -114,6 +178,7 @@ export interface KitInfo {
 }
 
 export interface RosterRow extends PlayerRow {
+  back_name: string | null
   jersey_number: number | null
   link_position: number | null
   link_position_name: string | null
@@ -123,6 +188,15 @@ export interface RosterRow extends PlayerRow {
 export interface Ref {
   id: number
   name: string
+}
+
+export interface Formation {
+  id: number | null
+  name: string | null
+  /** which of the game's generic formations it is (relativeformationid) */
+  base: number | null
+  /** the 11 places: position code and name, x/y on the pitch (0-1, own goal at y 0) */
+  positions: { code: number | null; name: string | null; x: number | null; y: number | null }[]
 }
 
 export interface TeamDetail extends TeamRow {
@@ -135,6 +209,12 @@ export interface TeamDetail extends TeamRow {
   roster: RosterRow[]
   captain: Ref | null
   takers: Record<string, Ref | null>
+  stadiums: StadiumInfo[]
+  stadium_custom_name: string | null
+  formation: Formation | null
+  club: Record<string, number | null>
+  rival: Ref | null
+  tactics: Record<string, number | null>
   raw: Raw
 }
 
@@ -157,13 +237,37 @@ export interface PlayerDetail extends PlayerRow {
   teams: PlayerTeamLink[]
   standalone: boolean
   face_files: { path: string; kind: string; where: string | null }[]
+  traits: string[]
+  all_traits: string[]
+  accessories: Record<string, number>
+  animations: Record<string, number>
+  career: { contract_until: number | null; joined: string | null; retiring: number | null }
   photo_where: string | null
   raw: Raw
+}
+
+export interface PreviewLook {
+  real: boolean
+  head: number
+  hair: number
+  hair_color: string
+  eyes: number | null
+  face: string
+  skin: number
+  sleeve: number
+  socks: number
+  shoe: number
+  glove: number
+  scale: number
+  query?: string
+  /** a real face shown although the player's row asks the game for a generic head (headclasscode 1) */
+  generic_in_game?: boolean
 }
 
 export interface Options {
   leagues: Ref[]
   nations: { id: number; name: string | null }[]
+  confederations: number[]
   positions: Ref[]
   levels: number[]
 }
@@ -173,9 +277,12 @@ export interface BasketForm {
   credits: string
   credits_url: string
   include_originals: boolean
+  include_stadiums: boolean
 }
 
 export interface BasketView {
+  nations: { id: number; name: string | null }[]
+  stadiums: { id: number; name: string | null }[]
   leagues: { id: number; name: string | null }[]
   teams: { id: number; name: string | null; players: number; roster: number | null; crest_no_background: boolean }[]
   players: { id: number; name: string | null }[]
@@ -189,6 +296,8 @@ export interface SavedSelection {
   created_at: string | null
   updated_at: string | null
   source_path: string | null
+  nations?: number
+  stadiums?: number
   leagues: number
   teams: number
   players: number
@@ -205,7 +314,7 @@ export interface ExportJob {
     path: string
     size: number
     warnings: string[]
-    counts: { leagues: number; teams: number; players: number; nations: number }
+    counts: { nations: number; leagues: number; teams: number; players: number; stadiums?: number }
   } | null
 }
 

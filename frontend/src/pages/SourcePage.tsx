@@ -8,9 +8,11 @@ import { api } from '@/api/client'
 import { Facts, Section } from '@/components/common/detail'
 import { useI18n } from '@/i18n'
 import { useStatus } from '@/state/queries'
+import { usePageLabel } from '@/lib/back'
 
 export function SourcePage() {
   const { t } = useI18n()
+  usePageLabel(t('nav.source'))
   const status = useStatus().data
   const qc = useQueryClient()
   const [path, setPath] = useState('')

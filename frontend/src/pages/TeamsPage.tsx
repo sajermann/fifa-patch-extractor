@@ -7,11 +7,13 @@ import { useI18n } from '@/i18n'
 import { FilterBar, FilterSelect, LIST_PAGE, Pager, ScrollTable, SearchInput, SortHead, useListState } from '@/lib/list'
 import { useBasketOp, useList, useOptions } from '@/state/queries'
 import { BasketFilter } from './LeaguesPage'
+import { usePageLabel } from '@/lib/back'
 
 const FILTERS = ['q', 'league', 'kits', 'national', 'in_basket'] as const
 
 export function TeamsPage() {
   const { t } = useI18n()
+  usePageLabel(t('nav.teams'))
   const navigate = useNavigate()
   const list = useListState(FILTERS)
   const { data, isFetching } = useList('teams', list.request, api.teams)

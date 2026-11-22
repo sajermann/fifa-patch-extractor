@@ -1,9 +1,9 @@
-"""What the screens show: one summary row per league, team and player (built once per loaded game), the filters,
+"""What the screens show: one summary row per country, league, team, player and stadium (built once per loaded game), the filters,
 sorting and pagination of the lists (always here, never in the browser) and the detail of one item."""
 import math
 import unicodedata
 
-from fpx import fifa14
+from fpx import fifa14, stadium3d
 
 PAGE_SIZES = (25, 50, 100)
 DEFAULT_PAGE_SIZE = 50
@@ -27,16 +27,85 @@ def age(birthdate: str | None, today: str = '2013-07-01') -> int | None:
 class Index:
     def __init__(self, src: fifa14.Fifa14Source):
         self.src = src
+        self.nation_players: dict[int, int] = {}
+        for p in src.players.values():
+            self.nation_players[p.get('nationality')] = self.nation_players.get(p.get('nationality'), 0) + 1
+        self.nations = {nid: self._nation(nid) for nid in src.nations}
         self.leagues = {lid: self._league(lid) for lid in src.leagues}
         self.teams = {tid: self._team(tid) for tid in src.teams}
         self.players = {pid: self._player(pid) for pid in src.players}
+        self.stadiums = {sid: self._stadium_row(sid) for sid in src.stadiums}
         self._search = {
+            'nations': {i: fold(' '.join([str(i), *self.src.nation_all_names(i).values()])) for i in self.nations},
             'leagues': {i: fold(' '.join([str(i), *self.src.league_all_names(i).values()])) for i in self.leagues},
             'teams': {i: fold(' '.join([str(i), *self.src.team_all_names(i).values()])) for i in self.teams},
             'players': {i: fold(' '.join([str(i), *self.src.player_names(i).values()])) for i in self.players},
+            'stadiums': {i: fold(' '.join([str(i), *self.src.stadium_all_names(i).values(),
+                                           *(self.src.stadium_custom_names.get(t, '') for t in
+                                             self.src.stadium_teams.get(i, []))])) for i in self.stadiums},
         }
 
     # ---- summaries ----------------------------------------------------------------------------------------------
+
+    def _nation(self, nid: int) -> dict:
+        row = self.src.nations[nid]
+        names = self.src.nation_all_names(nid)
+        team = row.get('teamid')
+        return {
+            'id': nid,
+            'name': self.src.nation_name(nid) or f'#{nid}',
+            'database_name': row.get('nationname'),
+            'abbr3': names.get('abbr3'),
+            'confederation': row.get('confederation'),
+            'top_tier': row.get('top_tier'),
+            'league_count': len(self.src.nation_leagues.get(nid, [])),
+            'player_count': self.nation_players.get(nid, 0),
+            'national_team_id': team if isinstance(team, int) and team > 0 else None,
+            'has_flag': self.src.flag_path(nid) is not None,
+        }
+
+    def _stadium_row(self, sid: int) -> dict:
+        row = self.src.stadiums[sid]
+        home = row.get('hometeamid')
+        home = home if isinstance(home, int) and home > 0 and home in self.src.teams else None
+        pictures = self.src.stadium_pictures(sid, 'large') or self.src.stadium_pictures(sid, 'small')
+        return {
+            'id': sid,
+            'name': self.src.stadium_display_name(sid),
+            'language_name': self.src.stadium_names.get(sid, {}).get('full'),
+            'capacity': row.get('capacity'),
+            'country_id': row.get('countrycode'),
+            'country': self.src.nation_name(row.get('countrycode')),
+            'home_team_id': home,
+            'home_team': self.src.team_display_name(home) if home else None,
+            'team_count': len(self.src.stadium_teams.get(sid, [])),
+            'picture': next(iter(pictures), None),  # the first picture variant, for the lists
+            'has_3d': bool(self.src.stadium_files(sid)),
+        }
+
+    def stadium(self, sid: int) -> dict | None:
+        """Summary of one stadium (shown on the team screen)."""
+        row = self.src.stadiums.get(sid)
+        if row is None:
+            return None
+        home = row.get('hometeamid')
+        home = home if isinstance(home, int) and home > 0 else None
+        files = self.src.stadium_files(sid)
+        return {
+            'id': sid,
+            'name': self.src.stadium_display_name(sid),
+            'names': self.src.stadium_all_names(sid),
+            'capacity': row.get('capacity'),
+            'year_built': row.get('yearbuilt'),
+            'country_id': row.get('countrycode'),
+            'country': self.src.nation_name(row.get('countrycode')),
+            'home_team': {'id': home, 'name': self.src.team_display_name(home)} if home in self.src.teams else None,
+            'team_count': len(self.src.stadium_teams.get(sid, [])),
+            'pictures': list(self.src.stadium_pictures(sid, 'large') or self.src.stadium_pictures(sid, 'small')),
+            'files': [{'path': p, 'where': self.src.files.where(p)} for p in files],
+            'times': stadium3d.available(self.src.files, sid),  # 3D preview: 1 = day, 3 = night
+            'raw': dict(row),
+        }
 
     def _league(self, lid: int) -> dict:
         row = self.src.leagues[lid]
@@ -109,11 +178,13 @@ class Index:
 
 
 SORTS = {
+    'stadiums': {'name', 'id', 'capacity', 'country', 'team_count'},
+    'nations': {'name', 'id', 'confederation', 'league_count', 'player_count'},
     'leagues': {'name', 'id', 'level', 'country', 'team_count'},
     'teams': {'name', 'id', 'overall', 'league', 'player_count', 'kit_count'},
     'players': {'name', 'id', 'overall', 'potential', 'age', 'position_code', 'nationality', 'team', 'height'},
 }
-DEFAULT_SORT = {'leagues': ('name', 'asc'), 'teams': ('name', 'asc'), 'players': ('overall', 'desc')}
+DEFAULT_SORT = {'stadiums': ('name', 'asc'), 'nations': ('name', 'asc'), 'leagues': ('name', 'asc'), 'teams': ('name', 'asc'), 'players': ('overall', 'desc')}
 
 
 def page(rows: list[dict], kind: str, sort: str | None, direction: str | None, page_no: int, size: int) -> dict:

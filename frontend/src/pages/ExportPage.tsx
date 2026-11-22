@@ -13,16 +13,18 @@ import type { BasketForm, ExportJob } from '@/api/types'
 import { Badge, Section } from '@/components/common/detail'
 import { useI18n } from '@/i18n'
 import { useBasketOp, useBasketView, useStatus } from '@/state/queries'
+import { usePageLabel } from '@/lib/back'
 
 const fmtSize = (n: number) => (n > 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`)
 const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '—')
 
 export function ExportPage() {
   const { t } = useI18n()
+  usePageLabel(t('nav.export'))
   const basket = useBasketView().data
   const op = useBasketOp()
   const ready = useStatus().data?.source.state === 'ready'
-  const empty = !basket || basket.counts.leagues + basket.counts.teams + basket.counts.players === 0
+  const empty = !basket || basket.counts.nations + basket.counts.leagues + basket.counts.teams + basket.counts.players + basket.counts.stadiums === 0
   return (
     <div className="max-w-5xl space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -38,7 +40,10 @@ export function ExportPage() {
         </div>
       </div>
       {basket && (
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+          <Section title={t('export.nationsCount', { count: basket.nations.length })}>
+            <ItemList items={basket.nations} to="nations" onRemove={(id) => op.mutate({ op: 'remove_nation', args: { id, with_leagues: false } })} />
+          </Section>
           <Section title={t('export.leaguesCount', { count: basket.leagues.length })}>
             <ItemList items={basket.leagues} to="leagues" onRemove={(id) => op.mutate({ op: 'remove_league', args: { id, with_teams: false } })} />
           </Section>
@@ -52,6 +57,10 @@ export function ExportPage() {
           <Section title={t('export.playersCount', { count: basket.counts.players })}>
             <p className="mb-2 text-xs text-muted-foreground">{t('export.playersHint', { alone: basket.players.length })}</p>
             <ItemList items={basket.players} to="players" onRemove={(id) => op.mutate({ op: 'remove_players', args: { ids: [id] } })} />
+          </Section>
+          <Section title={t('export.stadiumsCount', { count: basket.stadiums.length })}>
+            <p className="mb-2 text-xs text-muted-foreground">{t('export.stadiumsHint')}</p>
+            <ItemList items={basket.stadiums} to="stadiums" onRemove={(id) => op.mutate({ op: 'remove_stadium', args: { id } })} />
           </Section>
         </div>
       )}
@@ -145,6 +154,20 @@ function ExportForm({ form, disabled }: { form: BasketForm; disabled: boolean })
             <p className="text-xs text-muted-foreground">{t('export.includeOriginalsHint')}</p>
           </div>
         </div>
+        <div className="flex items-start gap-3">
+          <Checkbox
+            id="stadiums"
+            checked={draft.include_stadiums}
+            onCheckedChange={(v) => {
+              setDraft({ ...draft, include_stadiums: v === true })
+              save({ include_stadiums: v === true })
+            }}
+          />
+          <div>
+            <Label htmlFor="stadiums">{t('export.includeStadiums')}</Label>
+            <p className="text-xs text-muted-foreground">{t('export.includeStadiumsHint')}</p>
+          </div>
+        </div>
       </div>
       <div className="mt-6 flex flex-wrap items-center gap-4">
         <Button disabled={disabled || running} onClick={() => start.mutate()}>
@@ -227,7 +250,7 @@ function SavedSelections() {
   const [name, setName] = useState('')
   const { data } = useQuery({ queryKey: ['selections'], queryFn: api.selections, enabled: open })
   const refresh = () => {
-    for (const k of ['selections', 'basket', 'status', 'leagues', 'teams', 'players']) void qc.invalidateQueries({ queryKey: [k] })
+    for (const k of ['selections', 'basket', 'status', 'stadiums', 'nations', 'leagues', 'teams', 'players']) void qc.invalidateQueries({ queryKey: [k] })
   }
   const save = useMutation({ mutationFn: () => api.saveSelection(name), onSuccess: () => { toast.success(t('selections.saved')); setName(''); refresh() }, onError: (e: Error) => toast.error(e.message) })
   const load = useMutation({ mutationFn: api.loadSelection, onSuccess: () => { toast.success(t('selections.loaded')); refresh() }, onError: (e: Error) => toast.error(e.message) })
@@ -256,7 +279,7 @@ function SavedSelections() {
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{s.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  {t('selections.counts', { leagues: s.leagues, teams: s.teams, players: s.players })} · {fmtDate(s.updated_at)}
+                  {t('selections.counts', { stadiums: s.stadiums ?? 0, nations: s.nations ?? 0, leagues: s.leagues, teams: s.teams, players: s.players })} · {fmtDate(s.updated_at)}
                 </p>
               </div>
               <Button size="sm" variant="outline" onClick={() => load.mutate(s.id)}>

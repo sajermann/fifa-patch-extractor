@@ -3,13 +3,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
-import { BackButton, BasketButton, BasketCheck, Facts, OverallBadge, RawTable, Section } from '@/components/common/detail'
+import { BasketButton, BasketCheck, Facts, OverallBadge, RawTable, Section } from '@/components/common/detail'
 import { Crest, Flag, LeagueImage } from '@/components/common/pictures'
 import { LoadingBlock } from '@/components/layout/LoadingBlock'
 import { useI18n } from '@/i18n'
 import { useTab } from '@/lib/tabs'
 import { useBasketOp, useToken } from '@/state/queries'
 import { NameList } from './TeamPage'
+import { BackButton, usePageLabel } from '@/lib/back'
 
 const TABS = ['overview', 'raw'] as const
 
@@ -19,20 +20,29 @@ export function LeaguePage() {
   const token = useToken()
   const navigate = useNavigate()
   const { data, error } = useQuery({ queryKey: ['league', token, id], queryFn: () => api.league(id), enabled: !!token })
+  usePageLabel(data?.name)
   const op = useBasketOp()
   const [tab, setTab] = useTab(TABS)
   if (error) return <p className="text-destructive">{error.message}</p>
   if (!data) return <LoadingBlock />
   return (
     <div className="space-y-6">
-      <BackButton fallback="/leagues" />
+      <BackButton fallback={{ to: '/leagues', label: t('nav.leagues') }} />
       <div className="flex flex-wrap items-center gap-5">
         <LeagueImage id={id} size={128} available={data.images.includes('logo')} className="size-20" />
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-semibold">{data.name}</h1>
           <p className="flex items-center gap-2 text-sm text-muted-foreground">
             <Flag id={data.country_id} className="h-3.5 w-5" />
-            {[data.country, data.level !== null ? t('leagues.level', { level: data.level }) : null, `#${data.id}`].filter(Boolean).join(' · ')}
+            {data.country_id !== null && data.country && (
+              <>
+                <Link to={`/nations/${data.country_id}`} className="hover:underline">
+                  {data.country}
+                </Link>
+                {' · '}
+              </>
+            )}
+            {[data.level !== null ? t('leagues.level', { level: data.level }) : null, `#${data.id}`].filter(Boolean).join(' · ')}
           </p>
         </div>
         <BasketButton

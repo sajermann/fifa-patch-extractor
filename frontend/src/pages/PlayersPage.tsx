@@ -10,12 +10,14 @@ import { useI18n } from '@/i18n'
 import { FilterBar, FilterSelect, LIST_PAGE, Pager, ScrollTable, SearchInput, SortHead, useListState } from '@/lib/list'
 import { useBasketOp, useList, useOptions, useToken } from '@/state/queries'
 import { BasketFilter } from './LeaguesPage'
+import { usePageLabel } from '@/lib/back'
 
 const FILTERS = ['q', 'team', 'league', 'nation', 'position', 'min_overall', 'face', 'in_basket'] as const
 const OVERALLS = [90, 85, 80, 75, 70, 65, 60]
 
 export function PlayersPage() {
   const { t } = useI18n()
+  usePageLabel(t('nav.players'))
   const navigate = useNavigate()
   const list = useListState(FILTERS)
   const { data, isFetching } = useList('players', list.request, api.players)

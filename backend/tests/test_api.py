@@ -9,7 +9,7 @@ from conftest import wait
 def test_status(client):
     s = client.get('/api/status').json()
     assert s['source']['state'] == 'ready'
-    assert s['source']['counts'] == {'leagues': 2, 'teams': 2, 'players': 21, 'nations': 2}
+    assert s['source']['counts'] == {'leagues': 2, 'teams': 2, 'players': 21, 'nations': 2, 'stadiums': 1}
     assert s['source']['suspect_birthdates']
 
 
@@ -48,8 +48,11 @@ def test_details(client):
     t = client.get(f'/api/teams/{fakegame.TEAM}').json()
     assert t['names']['abbr3'] == 'TAT' and len(t['roster']) == 16 and t['captain']['id'] == fakegame.STAR
     assert [k['role'] for k in t['kits']] == ['home', 'away', 'goalkeeper']
+    assert t['formation']['name'] == '4-4-2' and len(t['formation']['positions']) == 11
+    assert t['club'] == {} and t['rival'] is None  # the fake teams have no club columns
     p = client.get(f'/api/players/{fakegame.STAR}').json()
     assert p['names']['last'] == 'Plàyer' and len(p['face_files']) == 4 and p['raw']['playerid'] == fakegame.STAR
+    assert p['traits'] == ['leadership', 'finesse_shot', 'one_club_player'] and len(p['all_traits']) == 41
     lg = client.get(f'/api/leagues/{fakegame.LEAGUE}').json()
     assert lg['images'] == ['logo', 'banner'] and lg['teams'][0]['id'] == fakegame.TEAM
     assert client.get('/api/players/1').status_code == 404
@@ -69,7 +72,7 @@ def test_basket(client):
         r = client.post('/api/basket', json={'op': name, 'args': args})
         assert r.status_code == 200, r.text
         return r.json()
-    assert op('add_league', id=fakegame.LEAGUE) == {'leagues': 1, 'teams': 1, 'players': 16}
+    assert op('add_league', id=fakegame.LEAGUE) == {'nations': 0, 'leagues': 1, 'teams': 1, 'players': 16, 'stadiums': 0}
     assert op('set_team', id=fakegame.TEAM, players=[fakegame.STAR, fakegame.KEEPER])['players'] == 2
     assert op('add_players', ids=[fakegame.SHARED, fakegame.STAR])['players'] == 3  # STAR already inside
     rows = client.get('/api/players', params={'in_basket': 'yes'}).json()['items']
@@ -79,8 +82,85 @@ def test_basket(client):
     assert op('remove_players', ids=[fakegame.STAR])['players'] == 2
     view = client.get('/api/basket').json()
     assert view['teams'][0]['players'] == 1 and view['players'][0]['id'] == fakegame.SHARED
-    assert op('remove_league', id=fakegame.LEAGUE) == {'leagues': 0, 'teams': 0, 'players': 1}
+    assert op('remove_league', id=fakegame.LEAGUE) == {'nations': 0, 'leagues': 0, 'teams': 0, 'players': 1, 'stadiums': 0}
     assert client.post('/api/basket', json={'op': 'nope'}).status_code == 400
+
+
+def test_nations(client):
+    r = client.get('/api/nations', params={'leagues': 'yes'}).json()
+    assert r['total'] == 2 and r['sort'] == 'name'
+    r = client.get('/api/nations', params={'q': 'republic'}).json()  # the name of the language database
+    row, = r['items']
+    assert row['id'] == 54 and row['name'] == 'Republic of Nowhere' and row['database_name'] == 'Nowhereland'
+    assert row['abbr3'] == 'NWH' and row['league_count'] == 1 and row['player_count'] == 21
+    n = client.get('/api/nations/54').json()
+    assert [lg['id'] for lg in n['leagues']] == [fakegame.LEAGUE] and n['audio']['chantregionindex'] == 7
+    assert [f['path'] for f in n['flag_files']] == ['data/ui/imgassets/flags512x512/f_54.dds',
+                                                    'data/ui/artassets/countryflags/f_54.big']
+    assert client.get('/api/nations/1').status_code == 404
+
+    def op(name, **args):
+        return client.post('/api/basket', json={'op': name, 'args': args}).json()
+    assert op('add_nation', id=54) == {'nations': 1, 'leagues': 1, 'teams': 1, 'players': 16, 'stadiums': 0}  # leagues and teams
+    assert client.get('/api/basket').json()['nations'] == [{'id': 54, 'name': 'Republic of Nowhere'}]
+    assert op('remove_nation', id=54) == {'nations': 0, 'leagues': 0, 'teams': 0, 'players': 0, 'stadiums': 0}
+
+
+def test_team_stadium(client):
+    t = client.get(f'/api/teams/{fakegame.TEAM}').json()
+    stadium, = t['stadiums']
+    assert stadium['id'] == fakegame.STADIUM and stadium['name'] == 'Test Ground' and stadium['capacity'] == 12345
+    assert stadium['home_team']['id'] == fakegame.TEAM and stadium['country'] == 'Republic of Nowhere'
+    assert stadium['pictures'] == [1, 3] and len(stadium['files']) == len(fakegame.STADIUM_FILES)
+    assert t['stadium_custom_name'] == 'Custom Park'
+    r = client.get(f'/api/image/stadium/{fakegame.STADIUM}/1')
+    assert r.status_code == 200 and r.content[:4] == b'\x89PNG'
+    assert client.get(f'/api/image/stadium/{fakegame.STADIUM}/2').status_code == 404
+    assert client.get(f'/api/teams/{fakegame.SMALL_TEAM}').json()['stadiums'] == []
+    assert stadium['times'] == [1]
+    r = client.get(f'/api/preview/stadium/{fakegame.STADIUM}.glb')
+    assert r.status_code == 200 and r.content[:4] == b'glTF'
+    assert client.get(f'/api/preview/stadium/{fakegame.STADIUM}.glb', params={'tod': 3}).status_code == 404
+    assert client.get(f'/api/preview/stadium/{fakegame.STADIUM}.glb', params={'tod': 2}).status_code == 404
+
+
+def test_stadiums(client):
+    r = client.get('/api/stadiums', params={'q': 'custom park'}).json()  # the name a team gives it is searched too
+    row, = r['items']
+    assert row['id'] == fakegame.STADIUM and row['name'] == 'Test Ground' and row['language_name'] == 'Test Arena'
+    assert row['home_team_id'] == fakegame.TEAM and row['picture'] == 1 and row['has_3d'] is True
+    assert client.get('/api/stadiums', params={'home': 'no'}).json()['total'] == 0
+    d = client.get(f'/api/stadiums/{fakegame.STADIUM}').json()
+    assert d['detail']['times'] == [1] and d['teams'][0]['stadium_custom_name'] == 'Custom Park'
+    assert client.get('/api/stadiums/999').status_code == 404
+
+    def op(name, **args):
+        return client.post('/api/basket', json={'op': name, 'args': args}).json()
+    assert op('add_stadium', id=fakegame.STADIUM)['stadiums'] == 1
+    assert client.get('/api/stadiums', params={'in_basket': 'yes'}).json()['total'] == 1
+    job = client.post('/api/export').json()  # a stadium alone is enough to export
+    wait(lambda: client.get(f'/api/export/{job["id"]}').json()['state'] != 'running')
+    result = client.get(f'/api/export/{job["id"]}').json()['result']
+    assert result['counts']['stadiums'] == 1 and result['counts']['teams'] == 0
+    client.delete(f'/api/exports/{result["name"]}')
+    assert op('remove_stadium', id=fakegame.STADIUM)['stadiums'] == 0
+
+
+def test_preview(client):
+    look = client.get(f'/api/preview/look/{fakegame.STAR}').json()
+    assert look['real'] is True and look['head'] == fakegame.STAR  # his own face files
+    assert look['generic_in_game'] is True  # his row does not ask the game for them (no headclasscode 0)
+    keeper = client.get(f'/api/preview/look/{fakegame.KEEPER}').json()  # a head file alone is no real face
+    assert keeper['real'] is False and keeper['head'] == 2500 + fakegame.KEEPER % 7
+    assert client.get('/api/preview/look/1').json()['head'] == 1  # unknown player = the model player
+    r = client.get(f'/api/preview/kit-print/{fakegame.TEAM}/0.png', params={'number': 10, 'name': 'Starman'})
+    assert r.status_code == 200 and r.content[:4] == b'\x89PNG'
+    assert client.get(f'/api/preview/kit-print/{fakegame.TEAM}/9.png').status_code == 404  # no such kit
+    assert client.get('/api/preview/mesh/jersey/0.glb').status_code == 404  # no body models in the fake game
+    assert client.get('/api/preview/mesh/nope/0.glb').status_code == 404
+    t = client.get(f'/api/teams/{fakegame.TEAM}').json()
+    star = next(r for r in t['roster'] if r['id'] == fakegame.STAR)
+    assert star['back_name'] == 'PLÀYER'
 
 
 def test_selections(client):
@@ -106,6 +186,7 @@ def test_export(client):
     assert job['state'] == 'done', job['error']
     result = job['result']
     assert result['name'].startswith('My-Patch-') and result['counts']['players'] == 16
+    assert result['counts']['stadiums'] == 1  # the team's stadium goes by default
     listed = client.get('/api/exports').json()
     assert listed[0]['name'] == result['name']
     r = client.get(f'/api/exports/{result["name"]}')
