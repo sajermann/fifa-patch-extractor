@@ -36,6 +36,7 @@ def test_lists_page_filter_sort(client):
     assert r['page'] == 1  # clamped to the last page
     r = client.get('/api/teams', params={'league': fakegame.LEAGUE}).json()
     assert [t['id'] for t in r['items']] == [fakegame.TEAM] and r['items'][0]['kit_count'] == 3
+    assert r['items'][0]['colors'] == [[200, 10, 20], [250, 250, 250]]  # the colors the database has
     r = client.get('/api/teams', params={'national': 'yes'}).json()
     assert r['items'] == []
     r = client.get('/api/leagues', params={'q': 'nowhere'}).json()
@@ -55,6 +56,9 @@ def test_details(client):
     assert p['traits'] == ['leadership', 'finesse_shot', 'one_club_player'] and len(p['all_traits']) == 41
     lg = client.get(f'/api/leagues/{fakegame.LEAGUE}').json()
     assert lg['images'] == ['logo', 'banner'] and lg['teams'][0]['id'] == fakegame.TEAM
+    assert lg['language_names']['full'] == {'eng_us': 'Test Premier Division of Nowhere'}
+    assert lg['language_names']['abbr'] == {'eng_us': 'TST 1'} and lg['name_keys'][0] == 'full'
+    assert lg['country_row']['id'] == 54 and lg['country_row']['name'] == 'Republic of Nowhere'
     assert client.get('/api/players/1').status_code == 404
 
 
@@ -95,6 +99,8 @@ def test_nations(client):
     assert row['abbr3'] == 'NWH' and row['league_count'] == 1 and row['player_count'] == 21
     n = client.get('/api/nations/54').json()
     assert [lg['id'] for lg in n['leagues']] == [fakegame.LEAGUE] and n['audio']['chantregionindex'] == 7
+    assert n['language_names'] == {'full': {'eng_us': 'Republic of Nowhere'}, 'abbr3': {'eng_us': 'NWH'}}
+    assert n['name_keys'] == ['full', 'abbr3']
     assert [f['path'] for f in n['flag_files']] == ['data/ui/imgassets/flags512x512/f_54.dds',
                                                     'data/ui/artassets/countryflags/f_54.big']
     assert client.get('/api/nations/1').status_code == 404

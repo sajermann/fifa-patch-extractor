@@ -102,7 +102,8 @@ export interface TeamRow {
   has_crest: boolean
   kit_count: number
   national_team_of: number | null
-  primary_color: RGB
+  /** the team's colors (teamcolor1..3) the database has */
+  colors: RGB[]
   in_basket: boolean
   basket_players: number
 }
@@ -132,6 +133,12 @@ export type Raw = Record<string, string | number | null>
 
 export interface LeagueDetail extends LeagueRow {
   names: Record<string, string>
+  /** the keys of the language names (full, abbr15, abbr, trophy, trophy_abbr15) */
+  name_keys: string[]
+  /** {key: {language: text}} in every language database of the game */
+  language_names: Record<string, Record<string, string>>
+  /** the league's country as a row of the countries list (null = no country) */
+  country_row: (NationRow & { in_basket: boolean }) | null
   images: string[]
   teams: TeamRow[]
   raw: Raw
@@ -139,6 +146,10 @@ export interface LeagueDetail extends LeagueRow {
 
 export interface NationDetail extends NationRow {
   names: Record<string, string>
+  /** the keys of the language names (full, abbr3) */
+  name_keys: string[]
+  /** {key: {language: text}} in every language database of the game */
+  language_names: Record<string, Record<string, string>>
   national_team: Ref | null
   leagues: LeagueRow[]
   flag_files: { path: string; where: string | null }[]

@@ -298,12 +298,19 @@ def nation_detail(nid: int):
     return {
         **_with_basket('nations', [idx.nations[nid]])[0],
         'names': src.nation_all_names(nid),
+        'name_keys': list(fifa14.NATION_NAME_STRINGS),
+        'language_names': src.language_names('nation', nid),
         'national_team': {'id': team, 'name': idx.teams[team]['name']} if team in idx.teams else None,
         'leagues': _with_basket('leagues', leagues),
         'flag_files': [{'path': p, 'where': src.files.where(p)} for p in src.flag_files(nid)],
         'audio': _raw(audio) if audio else None,
         'raw': _raw(src.nations[nid]),
     }
+
+
+def _country_ref(idx, nid) -> dict | None:
+    """The country row of the countries list (flag, name, leagues, players), for a league's Countries tab."""
+    return _with_basket('nations', [idx.nations[nid]])[0] if nid in idx.nations else None
 
 
 @app.get('/api/stadiums/{sid}')
@@ -331,6 +338,9 @@ def league_detail(lid: int):
     return {
         **_with_basket('leagues', [idx.leagues[lid]])[0],
         'names': src.league_all_names(lid),
+        'name_keys': list(fifa14.LEAGUE_NAME_STRINGS),
+        'language_names': src.language_names('league', lid),
+        'country_row': _country_ref(idx, idx.leagues[lid]['country_id']),
         'images': list(src.league_image_paths(lid)),
         'teams': _with_basket('teams', teams),
         'raw': _raw(src.leagues[lid]),

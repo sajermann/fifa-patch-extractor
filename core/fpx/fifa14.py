@@ -33,6 +33,9 @@ LEAGUE_NAME_STRINGS = {
 }
 NATION_NAME_STRINGS = {'full': 'NationName_', 'abbr3': 'nationname_abbr3_'}
 STADIUM_NAME_STRINGS = {'full': 'StadiumName_'}
+# the names read in every language (screens of a country and a league): {kind: (keys, string id prefixes)}
+LANGUAGE_NAME_KINDS = {'nation': (NATION_NAME_STRINGS, ('NationName_', 'nationname_abbr3_')),
+                       'league': (LEAGUE_NAME_STRINGS, ('LeagueName_', 'Labbr_', 'TrophyName_'))}
 
 # pictures (game paths; {} = the id)
 CREST = 'data/ui/imgassets/crest/l{}.dds'
@@ -153,6 +156,7 @@ class Fifa14Source:
         self.language = language
         self._index()
         self.warnings: list[str] = []  # language databases that could not be read
+        self._names_by_language: dict[str, dict[str, dict[int, dict[str, str]]]] = {}
         self.team_names = self._names(TEAM_NAME_STRINGS, ('TeamName_', 'CT_TeamName_'))
         self.league_names = self._names(LEAGUE_NAME_STRINGS, ('LeagueName_', 'Labbr_', 'TrophyName_'))
         self.nation_names = self._names(NATION_NAME_STRINGS, ('NationName_', 'nationname_abbr3_'))
@@ -247,10 +251,24 @@ class Fifa14Source:
         found = {os.path.basename(p)[:-3] for p in self.files.list('data/loc/') if p.endswith('.db')}
         return sorted(n for n in found if not n.endswith('_upd'))
 
-    def _names(self, table: dict, starts: tuple) -> dict[int, dict[str, str]]:
-        """{id: {key: text}} of the language database; the _upd database overrides the base one."""
+    def language_names(self, kind: str, oid: int) -> dict[str, dict[str, str]]:
+        """{key: {language: text}} of a country or league (`kind` 'nation' / 'league') in every language database of
+        the game (each kind is read once, on demand)."""
+        if kind not in self._names_by_language:
+            table, starts = LANGUAGE_NAME_KINDS[kind]
+            self._names_by_language[kind] = {lang: self._names(table, starts, lang) for lang in self.languages()}
+        out: dict[str, dict[str, str]] = {}
+        for lang, names in self._names_by_language[kind].items():
+            for key, text in names.get(oid, {}).items():
+                out.setdefault(key, {})[lang] = text
+        return out
+
+    def _names(self, table: dict, starts: tuple, language: str | None = None) -> dict[int, dict[str, str]]:
+        """{id: {key: text}} of the language database (the chosen one unless `language` is given); the _upd database
+        overrides the base one."""
+        language = language or self.language
         strings = {}
-        for name in (self.language, f'{self.language}_upd'):
+        for name in (language, f'{language}_upd'):
             raw = self.files.read(f'data/loc/{name}.db')
             if raw is None:
                 continue

@@ -38,7 +38,7 @@ export function LeaguesPage() {
           onChange={(v) => list.update({ level: v })}
           allLabel={t('filter.allLevels')}
           className="w-36"
-          options={(options?.levels ?? []).map((l) => ({ value: String(l), label: t('leagues.level', { level: l }) }))}
+          options={(options?.levels ?? []).map((l) => ({ value: String(l), label: t('filter.level', { level: l }) }))}
         />
         <BasketFilter value={list.values.in_basket} onChange={(v) => list.update({ in_basket: v })} />
       </FilterBar>
@@ -48,9 +48,9 @@ export function LeaguesPage() {
             <TableHead className="w-10" />
             <TableHead className="w-12" />
             <SortHead field="name" label={t('col.name')} state={sortState} />
-            <SortHead field="country" label={t('col.country')} state={sortState} />
-            <SortHead field="level" label={t('col.level')} state={sortState} />
-            <SortHead field="team_count" label={t('col.teams')} state={sortState} />
+            <SortHead field="country" label={t('col.country')} state={sortState} className="text-right" />
+            <SortHead field="level" label={t('col.level')} state={sortState} className="text-center" />
+            <SortHead field="team_count" label={t('col.teams')} state={sortState} className="text-center" />
             <SortHead field="id" label={t('col.id')} state={sortState} />
           </TableRow>
         </TableHeader>
@@ -71,9 +71,9 @@ export function LeaguesPage() {
                 <div className="font-medium">{l.name}</div>
                 {l.database_name && l.database_name !== l.name && <div className="text-xs text-muted-foreground">{l.database_name}</div>}
               </TableCell>
-              <TableCell>{l.country ?? '—'}</TableCell>
-              <TableCell className="tabular-nums">{l.level ?? '—'}</TableCell>
-              <TableCell className="tabular-nums">{l.team_count}</TableCell>
+              <TableCell className="text-right">{l.country ?? '—'}</TableCell>
+              <TableCell className="text-center tabular-nums">{l.level ?? '—'}</TableCell>
+              <TableCell className="text-center tabular-nums">{l.team_count}</TableCell>
               <TableCell className="text-muted-foreground tabular-nums">{l.id}</TableCell>
             </TableRow>
           ))}

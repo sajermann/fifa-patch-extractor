@@ -6,15 +6,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { api } from '@/api/client'
 import { Badge, BasketButton, BasketCheck, Facts, RawTable, Section } from '@/components/common/detail'
 import { Flag, LeagueImage } from '@/components/common/pictures'
+import { LanguageNames } from '@/components/common/names'
 import { LoadingBlock } from '@/components/layout/LoadingBlock'
 import { hasMessage, useI18n, type MessageKey } from '@/i18n'
 import { useTab } from '@/lib/tabs'
 import { useBasketOp, useToken } from '@/state/queries'
 import { useConfederationName } from './NationsPage'
-import { NameList } from './TeamPage'
 import { BackButton, usePageLabel } from '@/lib/back'
 
-const TABS = ['overview', 'raw'] as const
+const TABS = ['overview', 'leagues', 'raw'] as const
+
 
 export function NationPage() {
   const { t } = useI18n()
@@ -29,13 +30,14 @@ export function NationPage() {
   if (error) return <p className="text-destructive">{error.message}</p>
   if (!data) return <LoadingBlock />
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <BackButton fallback={{ to: '/nations', label: t('nav.nations') }} />
-      <div className="flex flex-wrap items-center gap-5">
-        <Flag id={id} size={256} available={data.has_flag} className="h-16 w-24" fallback={<FlagIcon className="size-8" />} />
-        <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-semibold">{data.name}</h1>
-          <p className="text-sm text-muted-foreground">{[confederation(data.confederation), `#${data.id}`].join(' · ')}</p>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <Flag id={id} size={256} available={data.has_flag} className="h-16 w-24 shrink-0" fallback={<FlagIcon className="size-8" />} />
+          <h1 className="min-w-0 text-2xl font-semibold break-words">{data.name}</h1>
+          <span className="shrink-0 text-sm text-muted-foreground tabular-nums">ID {data.id}</span>
+          <span className="shrink-0 text-sm text-muted-foreground">{confederation(data.confederation)}</span>
         </div>
         <BasketButton
           inside={data.in_basket}
@@ -47,16 +49,15 @@ export function NationPage() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="overview">{t('tab.overview')}</TabsTrigger>
+          <TabsTrigger value="leagues">{t('section.leaguesCount', { count: data.leagues.length })}</TabsTrigger>
           <TabsTrigger value="raw">{t('tab.raw')}</TabsTrigger>
         </TabsList>
-        <TabsContent value="overview" className="space-y-6">
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Section title={t('section.names')}>
-              <NameList names={data.names} prefix="nationName" />
-            </Section>
+        <TabsContent value="overview" className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-2">
             <Section title={t('section.details')}>
               <Facts
                 items={[
+                  [t('nationName.database'), data.names.database ?? '—'],
                   [t('col.confederation'), confederation(data.confederation)],
                   [t('nations.nationalTeam'), data.national_team ? <Link key="n" to={`/teams/${data.national_team.id}`} className="hover:underline">{data.national_team.name}</Link> : '—'],
                   [t('col.players'), data.player_count],
@@ -93,6 +94,13 @@ export function NationPage() {
               )}
             </Section>
           </div>
+          <Section title={t('section.names')}>
+            <div className="max-h-96 overflow-auto">
+              <LanguageNames columns={[...data.name_keys].reverse()} prefix="nationName" names={data.language_names} />
+            </div>
+          </Section>
+        </TabsContent>
+        <TabsContent value="leagues">
           <Section title={t('section.leaguesCount', { count: data.leagues.length })}>
             {data.leagues.length ? (
               <Table>
@@ -136,7 +144,7 @@ export function NationPage() {
             )}
           </Section>
         </TabsContent>
-        <TabsContent value="raw" className="space-y-6">
+        <TabsContent value="raw" className="space-y-4">
           <Section title={t('section.rawRow', { table: 'nations' })}>
             <RawTable raw={data.raw} />
           </Section>

@@ -9,7 +9,7 @@ import { useBasketOp, useList, useOptions } from '@/state/queries'
 import { BasketFilter } from './LeaguesPage'
 import { usePageLabel } from '@/lib/back'
 
-const FILTERS = ['q', 'league', 'kits', 'national', 'in_basket'] as const
+const FILTERS = ['q', 'league', 'in_basket'] as const
 
 export function TeamsPage() {
   const { t } = useI18n()
@@ -35,26 +35,6 @@ export function TeamsPage() {
           className="w-56"
           options={(options?.leagues ?? []).map((l) => ({ value: String(l.id), label: l.name }))}
         />
-        <FilterSelect
-          value={list.values.kits}
-          onChange={(v) => list.update({ kits: v })}
-          allLabel={t('filter.kitsAny')}
-          className="w-44"
-          options={[
-            { value: 'yes', label: t('filter.kitsYes') },
-            { value: 'no', label: t('filter.kitsNo') },
-          ]}
-        />
-        <FilterSelect
-          value={list.values.national}
-          onChange={(v) => list.update({ national: v })}
-          allLabel={t('filter.teamKindAny')}
-          className="w-44"
-          options={[
-            { value: 'no', label: t('filter.clubs') },
-            { value: 'yes', label: t('filter.nationalTeams') },
-          ]}
-        />
         <BasketFilter value={list.values.in_basket} onChange={(v) => list.update({ in_basket: v })} />
       </FilterBar>
       <ScrollTable>
@@ -63,11 +43,11 @@ export function TeamsPage() {
             <TableHead className="w-10" />
             <TableHead className="w-12" />
             <SortHead field="name" label={t('col.name')} state={sortState} />
-            <SortHead field="league" label={t('col.league')} state={sortState} />
-            <SortHead field="overall" label={t('col.overall')} state={sortState} />
-            <SortHead field="player_count" label={t('col.players')} state={sortState} />
-            <SortHead field="kit_count" label={t('col.kits')} state={sortState} />
-            <TableHead>{t('col.colors')}</TableHead>
+            <SortHead field="league" label={t('col.league')} state={sortState} className="text-right" />
+            <SortHead field="overall" label={t('col.overall')} state={sortState} className="text-center" />
+            <SortHead field="player_count" label={t('col.players')} state={sortState} className="text-center" />
+            <SortHead field="kit_count" label={t('col.kits')} state={sortState} className="text-center" />
+            <TableHead className="text-center">{t('col.colors')}</TableHead>
             <SortHead field="id" label={t('col.id')} state={sortState} />
           </TableRow>
         </TableHeader>
@@ -92,14 +72,18 @@ export function TeamsPage() {
                   <div className="text-xs text-muted-foreground">{t('teams.inBasketPlayers', { count: tm.basket_players, total: tm.player_count })}</div>
                 )}
               </TableCell>
-              <TableCell>{tm.national_team_of !== null ? t('teams.nationalTeam') : (tm.league ?? '—')}</TableCell>
-              <TableCell>
+              <TableCell className="text-right">{tm.national_team_of !== null ? t('teams.nationalTeam') : (tm.league ?? '—')}</TableCell>
+              <TableCell className="text-center">
                 <OverallBadge value={tm.overall} />
               </TableCell>
-              <TableCell className="tabular-nums">{tm.player_count}</TableCell>
-              <TableCell className="tabular-nums">{tm.kit_count}</TableCell>
+              <TableCell className="text-center tabular-nums">{tm.player_count}</TableCell>
+              <TableCell className="text-center tabular-nums">{tm.kit_count}</TableCell>
               <TableCell>
-                <ColorDot rgb={tm.primary_color} />
+                <span className="flex items-center justify-center gap-1">
+                  {tm.colors.map((c, i) => (
+                    <ColorDot key={i} rgb={c} />
+                  ))}
+                </span>
               </TableCell>
               <TableCell className="text-muted-foreground tabular-nums">{tm.id}</TableCell>
             </TableRow>

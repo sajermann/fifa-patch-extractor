@@ -109,7 +109,7 @@ export function AppShell() {
         </div>
       </aside>
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="z-10 flex shrink-0 items-center gap-3 border-b bg-background/95 px-6 py-3 text-sm backdrop-blur">
+        <header className="z-10 flex min-h-[53px] shrink-0 items-center gap-3 border-b bg-background/95 px-6 py-3 text-sm backdrop-blur">
           <span className="min-w-0 flex-1 truncate text-muted-foreground">
             {source?.state === 'ready' ? (
               <>

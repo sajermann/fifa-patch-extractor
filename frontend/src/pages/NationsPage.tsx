@@ -10,7 +10,7 @@ import { useBasketOp, useList, useOptions } from '@/state/queries'
 import { BasketFilter } from './LeaguesPage'
 import { usePageLabel } from '@/lib/back'
 
-const FILTERS = ['q', 'confederation', 'leagues', 'in_basket'] as const
+const FILTERS = ['q', 'confederation', 'in_basket'] as const
 
 /** Name of a confederation code of the database. */
 export function useConfederationName() {
@@ -46,16 +46,6 @@ export function NationsPage() {
           allLabel={t('filter.allConfederations')}
           options={(options?.confederations ?? []).map((c) => ({ value: String(c), label: confederation(c) }))}
         />
-        <FilterSelect
-          value={list.values.leagues}
-          onChange={(v) => list.update({ leagues: v })}
-          allLabel={t('filter.leaguesAny')}
-          className="w-44"
-          options={[
-            { value: 'yes', label: t('filter.leaguesYes') },
-            { value: 'no', label: t('filter.leaguesNo') },
-          ]}
-        />
         <BasketFilter value={list.values.in_basket} onChange={(v) => list.update({ in_basket: v })} />
       </FilterBar>
       <ScrollTable>
@@ -64,9 +54,9 @@ export function NationsPage() {
             <TableHead className="w-10" />
             <TableHead className="w-12" />
             <SortHead field="name" label={t('col.name')} state={sortState} />
-            <SortHead field="confederation" label={t('col.confederation')} state={sortState} />
-            <SortHead field="league_count" label={t('col.leagues')} state={sortState} />
-            <SortHead field="player_count" label={t('col.players')} state={sortState} />
+            <SortHead field="confederation" label={t('col.confederation')} state={sortState} className="text-right" />
+            <SortHead field="league_count" label={t('col.leagues')} state={sortState} className="text-center" />
+            <SortHead field="player_count" label={t('col.players')} state={sortState} className="text-center" />
             <SortHead field="id" label={t('col.id')} state={sortState} />
           </TableRow>
         </TableHeader>
@@ -87,9 +77,9 @@ export function NationsPage() {
                 <div className="font-medium">{n.name}</div>
                 {n.database_name && n.database_name !== n.name && <div className="text-xs text-muted-foreground">{n.database_name}</div>}
               </TableCell>
-              <TableCell>{confederation(n.confederation)}</TableCell>
-              <TableCell className="tabular-nums">{n.league_count}</TableCell>
-              <TableCell className="tabular-nums">{n.player_count}</TableCell>
+              <TableCell className="text-right">{confederation(n.confederation)}</TableCell>
+              <TableCell className="text-center tabular-nums">{n.league_count}</TableCell>
+              <TableCell className="text-center tabular-nums">{n.player_count}</TableCell>
               <TableCell className="text-muted-foreground tabular-nums">{n.id}</TableCell>
             </TableRow>
           ))}

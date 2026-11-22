@@ -137,7 +137,8 @@ class Index:
             'has_crest': self.src.crest_path(tid) is not None,
             'kit_count': len(self.src.kit_paths(tid)),
             'national_team_of': self.src.national_teams.get(tid),
-            'primary_color': [row.get('teamcolor1r'), row.get('teamcolor1g'), row.get('teamcolor1b')],
+            # the team's three colors (teamcolor1..3) that the database has, as [r, g, b]
+            'colors': [c for c in ([row.get(f'teamcolor{n}{x}') for x in 'rgb'] for n in (1, 2, 3)) if None not in c],
         }
 
     def _player(self, pid: int) -> dict:
