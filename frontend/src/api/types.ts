@@ -156,6 +156,8 @@ export interface StadiumInfo {
   country: string | null
   home_team: Ref | null
   team_count: number
+  /** times of day the match screen offers in this stadium (1 = day, 3 = night) and the weather allowed in each */
+  conditions: { time_of_day: number; rain: boolean; snow: boolean }[]
   pictures: number[]
   files: { path: string; where: string | null }[]
   /** times of day the 3D preview can show (1 = day, 3 = night); empty = no 3D files */

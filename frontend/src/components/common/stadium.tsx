@@ -1,4 +1,4 @@
-import { Box, ChevronUp, LoaderCircle } from 'lucide-react'
+import { Box, Check, ChevronUp, CloudRain, LoaderCircle, Moon, Snowflake, Sun, X, type LucideIcon } from 'lucide-react'
 import { lazy, Suspense } from 'react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -56,6 +56,44 @@ export function Stadium3D({ stadium, open, setOpen, className }: { stadium: Stad
   )
 }
 
+const DAY = 1
+const NIGHT = 3
+
+/** What the match screen offers in the stadium: day, night, rain and snow, each with a tick or a cross. Rain or snow
+ * allowed at only one of the times says which. */
+function StadiumConditions({ conditions }: { conditions: StadiumInfo['conditions'] }) {
+  const { t } = useI18n()
+  if (!conditions.length) return <>{t('stadium.noConditions')}</>
+  const times = conditions.map((c) => c.time_of_day)
+  const only = (flag: 'rain' | 'snow') => {
+    const at = conditions.filter((c) => c[flag]).map((c) => c.time_of_day)
+    if (!at.length || at.length === conditions.length || at.length > 1) return undefined
+    return at[0] === DAY ? t('stadium.cond.onlyDay') : at[0] === NIGHT ? t('stadium.cond.onlyNight') : undefined
+  }
+  const items: { icon: LucideIcon; label: string; on: boolean; note?: string }[] = [
+    { icon: Sun, label: t('stadium.cond.day'), on: times.includes(DAY) },
+    { icon: Moon, label: t('stadium.cond.night'), on: times.includes(NIGHT) },
+    { icon: CloudRain, label: t('stadium.cond.rain'), on: conditions.some((c) => c.rain), note: only('rain') },
+    { icon: Snowflake, label: t('stadium.cond.snow'), on: conditions.some((c) => c.snow), note: only('snow') },
+  ]
+  return (
+    <span className="flex flex-wrap gap-1.5">
+      {items.map(({ icon: Icon, label, on, note }) => (
+        <span
+          key={label}
+          title={`${label}: ${t(on ? 'stadium.cond.yes' : 'stadium.cond.no')}${note ? ` (${note})` : ''}`}
+          className={cn('inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-xs', !on && 'text-muted-foreground')}
+        >
+          <Icon className="size-3.5" />
+          {label}
+          {note && <span className="text-muted-foreground">({note})</span>}
+          {on ? <Check className="size-3.5 text-emerald-600 dark:text-emerald-400" /> : <X className="size-3.5 text-destructive" />}
+        </span>
+      ))}
+    </span>
+  )
+}
+
 /** Data of the stadium on top, its menu pictures below one another (a click opens them big). */
 export function StadiumDetails({ stadium: s, customName, title, className, scroll }: { stadium: StadiumInfo; customName?: string | null; title?: string; className?: string; scroll?: boolean }) {
   const { t } = useI18n()
@@ -67,6 +105,7 @@ export function StadiumDetails({ stadium: s, customName, title, className, scrol
           ...(customName ? [[t('stadium.customName'), customName] as [string, React.ReactNode]] : []),
           [t('stadium.capacity'), s.capacity?.toLocaleString() ?? '—'],
           [t('stadium.yearBuilt'), s.year_built || '—'],
+          [t('stadium.conditions'), <StadiumConditions key="w" conditions={s.conditions} />],
           [t('col.country'), s.country_id !== null && s.country ? <Link key="c" to={`/nations/${s.country_id}`} className="hover:underline">{s.country}</Link> : '—'],
           [t('stadium.homeTeam'), s.home_team ? <Link key="h" to={`/teams/${s.home_team.id}`} className="hover:underline">{s.home_team.name}</Link> : t('stadium.noHomeTeam')],
           [t('stadium.teamCount'), s.team_count],

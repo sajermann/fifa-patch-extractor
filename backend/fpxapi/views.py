@@ -101,6 +101,7 @@ class Index:
             'country': self.src.nation_name(row.get('countrycode')),
             'home_team': {'id': home, 'name': self.src.team_display_name(home)} if home in self.src.teams else None,
             'team_count': len(self.src.stadium_teams.get(sid, [])),
+            'conditions': self.src.stadium_conditions(sid),
             'pictures': list(self.src.stadium_pictures(sid, 'large') or self.src.stadium_pictures(sid, 'small')),
             'files': [{'path': p, 'where': self.src.files.where(p)} for p in files],
             'times': stadium3d.available(self.src.files, sid),  # 3D preview: 1 = day, 3 = night

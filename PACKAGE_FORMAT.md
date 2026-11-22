@@ -114,6 +114,7 @@ The stadiums of the exported teams (when the export asked for them; a stadium sh
 | `names` | `database` (the `stadiums` row), `full` (language database) |
 | `capacity`, `year_built`, `country_nation_id`, `home_team_id` | from the `stadiums` row (`home_team_id` null = no home team) |
 | `team_ids` | every team that plays there in the source |
+| `conditions[]` | `{time_of_day, rain, snow}`: the times of day the stadium offers (`1` = day, `3` = night) and, for each, whether rain and snow are allowed (both false = clear sky only). From `timeofday1..4` and `tod1weather..4` of the `stadiums` row (weather bit 1 = rain, bit 2 = snow; time `5` = unused slot, left out) |
 | `pictures[]` | `{variant, image, source_path, original?}`: the menu pictures, cut to the part the screen draws |
 | `files` | `{game path: zip path}` of the scene: model, textures, the variants some patches add per home team (`specificstadium_*`), crowd placement |
 | `raw` | rows with this `stadiumid` (`stadiums`, `teamstadiumlinks`, `audiostadium`; not fixtures or saves) |

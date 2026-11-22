@@ -405,6 +405,7 @@ class _Builder:
             'country_nation_id': country,
             'home_team_id': _id(row.get('hometeamid')),
             'team_ids': self.src.stadium_teams.get(sid, []),
+            'conditions': self.src.stadium_conditions(sid),
             'pictures': pictures,
             'files': files,
             'raw': self.src.related_rows('stadiumid', sid, skip=STADIUM_RAW_SKIP),

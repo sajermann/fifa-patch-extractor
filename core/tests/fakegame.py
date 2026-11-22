@@ -39,7 +39,8 @@ TEAMS = [
 ]
 LEAGUE_TEAM_LINKS = [{'leagueid': LEAGUE, 'teamid': TEAM}, {'leagueid': PLAIN_LEAGUE, 'teamid': SMALL_TEAM}]
 STADIUMS = [{'stadiumid': STADIUM, 'name': 'Test Ground', 'capacity': 12345, 'yearbuilt': 1901, 'countrycode': 54,
-             'hometeamid': TEAM}]
+             'hometeamid': TEAM, 'timeofday1': 1, 'timeofday2': 3, 'timeofday3': 5, 'timeofday4': 5,
+             'tod1weather': 3, 'tod2weather': 1, 'tod3weather': 0, 'tod4weather': 0}]
 STADIUM_FILES: dict[str, bytes] = {}  # filled at the end of the module (the scene is built by stadium_scene)
 
 # language database: (stringid, text); the _upd database overrides the base one

@@ -132,6 +132,8 @@ def test_stadiums(client):
     assert client.get('/api/stadiums', params={'home': 'no'}).json()['total'] == 0
     d = client.get(f'/api/stadiums/{fakegame.STADIUM}').json()
     assert d['detail']['times'] == [1] and d['teams'][0]['stadium_custom_name'] == 'Custom Park'
+    assert d['detail']['conditions'] == [{'time_of_day': 1, 'rain': True, 'snow': True},
+                                         {'time_of_day': 3, 'rain': True, 'snow': False}]
     assert client.get('/api/stadiums/999').status_code == 404
 
     def op(name, **args):

@@ -137,6 +137,8 @@ def test_team_stadium(src):
     assert [p['variant'] for p in stadium['pictures']] == [1, 3]
     picture = Image.open(io.BytesIO(pkg.files[stadium['pictures'][0]['image']]))
     assert picture.size == fakegame.STADIUM_PICTURE  # cut to what the menu draws
+    assert stadium['conditions'] == [{'time_of_day': 1, 'rain': True, 'snow': True},  # unused slots (5) left out
+                                     {'time_of_day': 3, 'rain': True, 'snow': False}]
     assert stadium['raw']['stadiums'][0]['name'] == 'Test Ground'
     assert pkg.manifest['includes_stadiums'] is True and pkg.warnings == []
 

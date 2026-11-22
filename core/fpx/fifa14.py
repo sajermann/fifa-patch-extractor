@@ -51,6 +51,11 @@ STADIUM_CROWD = re.compile(r'data/sceneassets/crowdplacement/crowd_(\d+)_[^/]*$'
 STADIUM_PICTURE_FOLDERS = {'large': 'data/ui/artassets/stadiumsbig/', 'small': 'data/ui/artassets/stadium/'}
 STADIUM_PICTURES = {'large': re.compile(r'data/ui/artassets/stadiumsbig/st_(\d+)_(\d+)\.big$'),
                     'small': re.compile(r'data/ui/artassets/stadium/stadium_(\d+)_(\d+)\.big$')}
+# times of day and weather a stadium allows: four slots (timeofday1..4 + tod1weather..4); time 1 = day, 3 = night,
+# 5 = empty slot; weather is two flags (1 = rain, 2 = snow; 0 = clear sky only, e.g. stadiums with a roof)
+STADIUM_SLOTS = 4
+STADIUM_NO_TIME = 5
+WEATHER_RAIN, WEATHER_SNOW = 1, 2
 KIT = 'data/sceneassets/kit/kit_{}_{}_0.rx3'  # team, kit type
 NAME_FONT = 'data/sceneassets/jerseyfonts/font_{}.ttf'
 NUMBER_FONT = 'data/sceneassets/kitnumbers/kitnumbers_{}_{}.rx3'  # font, palette color
@@ -384,6 +389,18 @@ class Fifa14Source:
     def stadium_files(self, sid: int) -> list[str]:
         """Game paths of the stadium's scene: models, textures and crowd placement (not the menu pictures)."""
         return sorted(self._stadium_files.get(sid, []))
+
+    def stadium_conditions(self, sid: int) -> list[dict]:
+        """[{time_of_day, rain, snow}] of the stadium's used slots (the match screen only offers these)."""
+        row = self.stadiums.get(sid) or {}
+        out = []
+        for slot in range(1, STADIUM_SLOTS + 1):
+            time = row.get(f'timeofday{slot}')
+            if not isinstance(time, int) or time == STADIUM_NO_TIME:
+                continue
+            weather = row.get(f'tod{slot}weather') or 0
+            out.append({'time_of_day': time, 'rain': bool(weather & WEATHER_RAIN), 'snow': bool(weather & WEATHER_SNOW)})
+        return out
 
     def stadium_pictures(self, sid: int, size: str = 'large') -> dict[int, str]:
         """{variant: game path} of the menu pictures of the stadium ('large' or 'small')."""
