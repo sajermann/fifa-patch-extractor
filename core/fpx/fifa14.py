@@ -34,7 +34,8 @@ LEAGUE_NAME_STRINGS = {
 NATION_NAME_STRINGS = {'full': 'NationName_', 'abbr3': 'nationname_abbr3_'}
 STADIUM_NAME_STRINGS = {'full': 'StadiumName_'}
 # the names read in every language (screens of a country and a league): {kind: (keys, string id prefixes)}
-LANGUAGE_NAME_KINDS = {'nation': (NATION_NAME_STRINGS, ('NationName_', 'nationname_abbr3_')),
+LANGUAGE_NAME_KINDS = {'team': (TEAM_NAME_STRINGS, ('TeamName_', 'CT_TeamName_')),
+                       'nation': (NATION_NAME_STRINGS, ('NationName_', 'nationname_abbr3_')),
                        'league': (LEAGUE_NAME_STRINGS, ('LeagueName_', 'Labbr_', 'TrophyName_'))}
 
 # pictures (game paths; {} = the id)
@@ -252,7 +253,7 @@ class Fifa14Source:
         return sorted(n for n in found if not n.endswith('_upd'))
 
     def language_names(self, kind: str, oid: int) -> dict[str, dict[str, str]]:
-        """{key: {language: text}} of a country or league (`kind` 'nation' / 'league') in every language database of
+        """{key: {language: text}} of a team, country or league (`kind` 'team' / 'nation' / 'league') in every language database of
         the game (each kind is read once, on demand)."""
         if kind not in self._names_by_language:
             table, starts = LANGUAGE_NAME_KINDS[kind]

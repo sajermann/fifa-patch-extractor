@@ -188,6 +188,10 @@ export interface KitInfo {
   where: string | null
   name_color: RGB | null
   fields: Record<string, number | null>
+  /** the name font's family name, and the colors the number color codes show */
+  name_font_name: string | null
+  number_rgb: RGB | null
+  shorts_number_rgb: RGB | null
 }
 
 export interface RosterRow extends PlayerRow {
@@ -214,6 +218,13 @@ export interface Formation {
 
 export interface TeamDetail extends TeamRow {
   names: Record<string, string>
+  /** the keys of the language names and {key: {language: text}} in every language database of the game */
+  name_keys: string[]
+  language_names: Record<string, Record<string, string>>
+  /** attack, midfield and defense ratings of the database */
+  ratings: { attack: number | null; midfield: number | null; defense: number | null }
+  /** the team's leagues as rows of the leagues list */
+  league_rows: (LeagueRow & { in_basket: boolean })[]
   colors: RGB[]
   leagues: Ref[]
   crest_where: string | null
@@ -282,6 +293,7 @@ export interface Options {
   nations: { id: number; name: string | null }[]
   confederations: number[]
   positions: Ref[]
+  teams: Ref[]
   levels: number[]
 }
 

@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from . import settings  # noqa: I001 - first: it puts the core folder on the path
 
-from fpx import fifa14, images, kitprint, package, preview, stadium3d  # noqa: E402
+from fpx import fifa14, images, kitfonts, kitprint, package, preview, stadium3d  # noqa: E402
 
 from . import dialogs, views  # noqa: E402
 from .state import Basket, Exports, Selections, SourceHolder
@@ -264,6 +264,8 @@ def filter_options():
                            if nid in used_nations), key=lambda r: views.fold(r['name'])),
         'confederations': sorted({r['confederation'] for r in idx.nations.values() if r['confederation'] is not None}),
         'positions': [{'id': i, 'name': n} for i, n in enumerate(fifa14.POSITIONS[:28])],
+        'teams': sorted(({'id': r['id'], 'name': r['name']} for r in idx.teams.values()),
+                        key=lambda r: views.fold(r['name'])),
         'levels': sorted({r['level'] for r in idx.leagues.values() if r['level'] is not None}),
     }
 
@@ -352,6 +354,18 @@ KIT_FIELDS = ('jerseycollargeometrytype', 'jerseynamefonttype', 'jerseynamelayou
               'shortsnumberfonttype', 'shortsnumbercolor', 'shortsnumberplacementcode')
 
 
+def _font_name(src, font) -> str | None:
+    """The family name of a name font (jerseyfonts/font_<n>.ttf), as the FIFA 14 Studio lists it."""
+    data = src.files.read(fifa14.NAME_FONT.format(font)) if isinstance(font, int) else None
+    return kitfonts.family_name(data) if data else None
+
+
+def _number_ink(src, color) -> list[int] | None:
+    """The color a number color code shows (its digits in kitnumbers_1_<color>, as the FIFA 14 Studio reads it)."""
+    data = src.files.read(fifa14.NUMBER_FONT.format(1, color)) if isinstance(color, int) else None
+    return kitfonts.ink_color(data) if data else None
+
+
 @app.get('/api/teams/{tid}')
 def team_detail(tid: int):
     src, idx = ready()
@@ -366,7 +380,11 @@ def team_detail(tid: int):
                      'where': src.files.where(path),
                      'name_color': [krow.get('jerseynamecolorr'), krow.get('jerseynamecolorg'),
                                     krow.get('jerseynamecolorb')] if krow else None,
-                     'fields': {k: krow.get(k) for k in KIT_FIELDS if k in krow}})
+                     'fields': {k: krow.get(k) for k in KIT_FIELDS if k in krow},
+                     # what the numbers mean on screen: the name font's family name and the color the digits show
+                     'name_font_name': _font_name(src, krow.get('jerseynamefonttype')),
+                     'number_rgb': _number_ink(src, krow.get('numbercolor')),
+                     'shorts_number_rgb': _number_ink(src, krow.get('shortsnumbercolor'))})
     picked = basket.data['teams'].get(str(tid))
     picked_players = set(picked['players']) if picked else set()
     inside = basket.player_ids()
@@ -386,6 +404,12 @@ def team_detail(tid: int):
     return {
         **_with_basket('teams', [idx.teams[tid]])[0],
         'names': src.team_all_names(tid),
+        'name_keys': list(fifa14.TEAM_NAME_STRINGS),
+        'language_names': src.language_names('team', tid),
+        'ratings': {'attack': row.get('attackrating'), 'midfield': row.get('midfieldrating'),
+                    'defense': row.get('defenserating')},
+        'league_rows': _with_basket('leagues', [idx.leagues[lid] for lid in src.team_leagues.get(tid, [])
+                                                if lid in idx.leagues]),
         'colors': [[row.get(f'teamcolor{i}r'), row.get(f'teamcolor{i}g'), row.get(f'teamcolor{i}b')] for i in (1, 2, 3)],
         'leagues': [{'id': lid, 'name': idx.leagues[lid]['name']} for lid in src.team_leagues.get(tid, [])
                     if lid in idx.leagues],

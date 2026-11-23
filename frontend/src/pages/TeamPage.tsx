@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Box, ScanFace } from 'lucide-react'
+import { CircleCheck, CircleX, CornerUpLeft, CornerUpRight, Crown, Eye, Goal, MoveUpRight, ScanFace, Target, type LucideIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -9,9 +9,10 @@ import { Switch } from '@/components/ui/switch'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/api/client'
-import type { KitInfo, RosterRow, StadiumInfo, TeamDetail } from '@/api/types'
-import { Badge, BasketButton, BasketCheck, Facts, OverallBadge, RawTable, Section } from '@/components/common/detail'
-import { ColorDot, Crest, KitImage, Photo } from '@/components/common/pictures'
+import type { KitInfo, RGB, RosterRow, StadiumInfo, TeamDetail } from '@/api/types'
+import { Badge, BasketButton, BasketCheck, Facts, FillScroll, OverallBadge, RawTable, Section } from '@/components/common/detail'
+import { ColorDot, Crest, KitImage, LeagueImage, Photo } from '@/components/common/pictures'
+import { LanguageNames } from '@/components/common/names'
 import { FormationPitch } from '@/components/common/FormationPitch'
 import { Preview3D } from '@/components/common/Preview3D'
 import { Stadium3D, StadiumDatabase, StadiumDetails } from '@/components/common/stadium'
@@ -19,10 +20,13 @@ import { LoadingBlock } from '@/components/layout/LoadingBlock'
 import { hasMessage, useI18n, type MessageKey } from '@/i18n'
 import { previewKit } from '@/lib/preview'
 import { useTab } from '@/lib/tabs'
+import { cn } from '@/lib/utils'
 import { useBasketOp, useToken } from '@/state/queries'
 import { BackButton, usePageLabel } from '@/lib/back'
 
-const TABS = ['overview', 'roster', 'kits', 'stadium', 'raw'] as const
+const TABS = ['data', 'crest', 'kits', 'leagues', 'roster', 'stadium', 'raw'] as const
+// the name columns in the FIFA 14 Studio's order
+const NAME_COLUMNS = ['full', 'abbr15', 'abbr10', 'abbr7', 'abbr3', 'commentary']
 
 /** Every name the game has for the item, labelled. */
 export function NameList({ names, prefix }: { names: Record<string, string>; prefix: 'teamName' | 'leagueName' | 'playerName' | 'nationName' | 'stadiumName' }) {
@@ -57,16 +61,26 @@ export function TeamPage() {
   if (!data) return <LoadingBlock />
   const nobg = data.in_basket && data.crest_no_background
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <BackButton fallback={{ to: '/teams', label: t('nav.teams') }} />
-      <div className="flex flex-wrap items-center gap-5">
-        <Crest id={id} size={256} available={data.has_crest} noBackground={nobg} className="size-24" />
-        <div className="min-w-0 flex-1">
-          <h1 className="text-2xl font-semibold">{data.name}</h1>
-          <p className="text-sm text-muted-foreground">
-            {[data.national_team_of !== null ? t('teams.nationalTeam') : null, ...data.leagues.map((l) => l.name), `#${data.id}`].filter(Boolean).join(' · ')}
-          </p>
-          {data.in_basket && <p className="mt-1 text-sm">{t('teams.inBasketPlayers', { count: data.basket_players, total: data.player_count })}</p>}
+      {/* one line like the FIFA 14 Studio's header: crest, name, leagues · ID */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <Crest id={id} size={256} available={data.has_crest} noBackground={nobg} className="size-24 shrink-0" />
+          <h1 className="min-w-0 text-2xl font-semibold break-words">{data.name}</h1>
+          <span className="shrink-0 text-sm text-muted-foreground tabular-nums">
+            {data.national_team_of !== null && <>{t('teams.nationalTeam')} · </>}
+            {data.leagues.map((l) => (
+              <span key={l.id}>
+                <Link to={`/leagues/${l.id}`} className="hover:underline">
+                  {l.name}
+                </Link>
+                {' · '}
+              </span>
+            ))}
+            ID {data.id}
+          </span>
+          {data.in_basket && <span className="shrink-0 text-sm">{t('teams.inBasketPlayers', { count: data.basket_players, total: data.player_count })}</span>}
         </div>
         <BasketButton
           inside={data.in_basket}
@@ -77,20 +91,28 @@ export function TeamPage() {
       </div>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="overview">{t('tab.overview')}</TabsTrigger>
-          <TabsTrigger value="roster">{t('tab.roster', { count: data.roster.length })}</TabsTrigger>
+          <TabsTrigger value="data">{t('tab.data')}</TabsTrigger>
+          <TabsTrigger value="crest">{t('tab.crestColors')}</TabsTrigger>
           <TabsTrigger value="kits">{t('tab.kits', { count: data.kits.length })}</TabsTrigger>
+          <TabsTrigger value="leagues">{t('section.leaguesCount', { count: data.league_rows.length })}</TabsTrigger>
+          <TabsTrigger value="roster">{t('tab.roster', { count: data.roster.length })}</TabsTrigger>
           <TabsTrigger value="stadium">{t('tab.stadium')}</TabsTrigger>
           <TabsTrigger value="raw">{t('tab.raw')}</TabsTrigger>
         </TabsList>
-        <TabsContent value="overview">
-          <Overview data={data} />
+        <TabsContent value="data">
+          <DataTab data={data} />
         </TabsContent>
-        <TabsContent value="roster">
-          <Roster data={data} />
+        <TabsContent value="crest">
+          <CrestTab data={data} />
         </TabsContent>
         <TabsContent value="kits">
           <Kits data={data} />
+        </TabsContent>
+        <TabsContent value="leagues">
+          <LeaguesTab data={data} />
+        </TabsContent>
+        <TabsContent value="roster">
+          <Roster data={data} />
         </TabsContent>
         <TabsContent value="stadium">
           <Stadiums data={data} />
@@ -105,24 +127,73 @@ export function TeamPage() {
   )
 }
 
-function Overview({ data }: { data: TeamDetail }) {
+/** Same layout as the FIFA 14 Studio's Data tab (read-only): ratings and club in a column, the tactics beside them,
+ * the names in every language below. */
+function DataTab({ data }: { data: TeamDetail }) {
+  const { t } = useI18n()
+  return (
+    <div className="space-y-4">
+      <div className="grid items-start gap-4 lg:grid-cols-2">
+        <div className="space-y-4">
+          <Section title={t('team.ratings')}>
+            <Facts
+              items={[
+                [t('col.overall'), <OverallBadge key="o" value={data.overall} />],
+                [t('team.attack'), data.ratings.attack ?? '—'],
+                [t('team.midfield'), data.ratings.midfield ?? '—'],
+                [t('team.defense'), data.ratings.defense ?? '—'],
+              ]}
+            />
+          </Section>
+          <Section title={t('fieldGroup.club')}>
+            <Facts
+              items={[
+                ...Object.entries(data.club).map(([k, v]) => [label(t, k), k === 'transferbudget' && v !== null ? v.toLocaleString() : v] as [string, React.ReactNode]),
+                [
+                  t('field.rivalteam'),
+                  data.rival ? (
+                    <Link key="r" to={`/teams/${data.rival.id}`} className="inline-flex items-center gap-1.5 hover:underline">
+                      <Crest id={data.rival.id} size={32} className="size-4" />
+                      {data.rival.name}
+                    </Link>
+                  ) : (
+                    '—'
+                  ),
+                ],
+              ]}
+            />
+          </Section>
+        </div>
+        <Section title={t('fieldGroup.tactics')}>
+          <Facts items={Object.entries(data.tactics).map(([k, v]) => [label(t, k), v] as [string, React.ReactNode])} />
+        </Section>
+      </div>
+      <Section title={t('section.names')}>
+        <div className="max-h-96 overflow-auto">
+          <LanguageNames columns={NAME_COLUMNS} prefix="teamName" names={data.language_names} />
+        </div>
+      </Section>
+    </div>
+  )
+}
+
+/** The crest (as the game has it and without its background) and the team's colors, like the Studio's Crest and
+ * colors tab. */
+function CrestTab({ data }: { data: TeamDetail }) {
   const { t } = useI18n()
   const op = useBasketOp()
-  const ref = (r: { id: number; name: string } | null) => (r ? <Link to={`/players/${r.id}`} className="hover:underline">{r.name}</Link> : '—')
+  const checker = 'size-32 rounded bg-[repeating-conic-gradient(#8881_0_25%,transparent_0_50%)] bg-[length:16px_16px]'
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <Section title={t('section.names')}>
-        <NameList names={data.names} prefix="teamName" />
-      </Section>
+    <div className="grid items-start gap-4 lg:grid-cols-2">
       <Section title={t('section.crest')}>
         <div className="flex flex-wrap items-center gap-6">
           <div className="text-center text-xs text-muted-foreground">
-            <Crest id={data.id} size={256} available={data.has_crest} className="size-32 rounded bg-[repeating-conic-gradient(#8881_0_25%,transparent_0_50%)] bg-[length:16px_16px]" />
+            <Crest id={data.id} size={256} available={data.has_crest} className={checker} />
             {t('teams.crestOriginal')}
           </div>
           {data.has_crest && (
             <div className="text-center text-xs text-muted-foreground">
-              <Crest id={data.id} size={256} noBackground className="size-32 rounded bg-[repeating-conic-gradient(#8881_0_25%,transparent_0_50%)] bg-[length:16px_16px]" />
+              <Crest id={data.id} size={256} noBackground className={checker} />
               {t('teams.crestNoBackground')}
             </div>
           )}
@@ -141,42 +212,62 @@ function Overview({ data }: { data: TeamDetail }) {
           </div>
         )}
         {data.has_crest && !data.in_basket && <p className="mt-1 text-xs text-muted-foreground">{t('teams.crestSwitchHint')}</p>}
+        <div className="mt-4">
+          <Facts items={[[t('teams.crestFrom'), data.crest_where ?? '—']]} />
+        </div>
       </Section>
-      <Section title={t('section.details')}>
+      <Section title={t('col.colors')}>
         <Facts
-          items={[
-            [t('col.overall'), <OverallBadge key="o" value={data.overall} />],
-            [
-              t('col.colors'),
-              <span key="c" className="inline-flex gap-1.5">
-                {data.colors.map((c, i) => (
-                  <ColorDot key={i} rgb={c} />
-                ))}
-              </span>,
-            ],
-            [t('col.leagues'), data.leagues.length ? data.leagues.map((l) => <Link key={l.id} to={`/leagues/${l.id}`} className="mr-2 hover:underline">{l.name}</Link>) : '—'],
-            [t('teams.captain'), ref(data.captain)],
-            ...Object.entries(data.takers).map(([k, v]) => [t(`taker.${k}` as MessageKey), ref(v)] as [string, React.ReactNode]),
-            [
-              t('teams.stadium'),
-              data.stadiums.length ? data.stadium_custom_name ?? data.stadiums.map((s) => s.name).join(', ') : '—',
-            ],
-            [t('teams.crestFrom'), data.crest_where ?? '—'],
-          ]}
+          items={data.colors.map(
+            (c, i) =>
+              [
+                t('teams.colorN', { n: i + 1 }),
+                <span key={i} className="inline-flex items-center gap-2">
+                  <ColorDot rgb={c} />
+                  <span className="font-mono text-xs text-muted-foreground">{c.join(', ')}</span>
+                </span>,
+              ] as [string, React.ReactNode],
+          )}
         />
-      </Section>
-      <Section title={t('fieldGroup.club')}>
-        <Facts
-          items={[
-            ...Object.entries(data.club).map(([k, v]) => [label(t, k), k === 'transferbudget' && v !== null ? v.toLocaleString() : v] as [string, React.ReactNode]),
-            [t('field.rivalteam'), data.rival ? <Link key="r" to={`/teams/${data.rival.id}`} className="hover:underline">{data.rival.name}</Link> : '—'],
-          ]}
-        />
-      </Section>
-      <Section title={t('fieldGroup.tactics')}>
-        <Facts items={Object.entries(data.tactics).map(([k, v]) => [label(t, k), v] as [string, React.ReactNode])} />
       </Section>
     </div>
+  )
+}
+
+/** The leagues the team plays in (the Studio's Leagues tab, without the editing). */
+function LeaguesTab({ data }: { data: TeamDetail }) {
+  const { t } = useI18n()
+  const navigate = useNavigate()
+  if (!data.league_rows.length) return <p className="py-6 text-sm text-muted-foreground">{t('teams.noLeagues')}</p>
+  return (
+    <Section title={t('section.leaguesCount', { count: data.league_rows.length })}>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-12" />
+            <TableHead>{t('col.name')}</TableHead>
+            <TableHead className="text-right">{t('col.country')}</TableHead>
+            <TableHead className="w-28 text-center">{t('col.level')}</TableHead>
+            <TableHead className="w-28 text-center">{t('col.teams')}</TableHead>
+            <TableHead className="w-28">{t('col.id')}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {data.league_rows.map((l) => (
+            <TableRow key={l.id} className="cursor-pointer" onClick={() => navigate(`/leagues/${l.id}`)}>
+              <TableCell>
+                <LeagueImage id={l.id} size={64} available={l.has_logo} className="size-8" />
+              </TableCell>
+              <TableCell className="font-medium">{l.name}</TableCell>
+              <TableCell className="text-right">{l.country ?? '—'}</TableCell>
+              <TableCell className="text-center tabular-nums">{l.level ?? '—'}</TableCell>
+              <TableCell className="text-center tabular-nums">{l.team_count}</TableCell>
+              <TableCell className="text-muted-foreground tabular-nums">{l.id}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Section>
   )
 }
 
@@ -186,9 +277,51 @@ const label = (t: (k: MessageKey) => string, column: string) => (hasMessage(`fie
 function Roster({ data }: { data: TeamDetail }) {
   return (
     <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <RosterTable data={data} />
+      <div className="min-w-0 space-y-4">
+        <RosterTable data={data} />
+        <Takers data={data} />
+      </div>
       <Formation data={data} />
     </div>
+  )
+}
+
+// captain and set-piece takers, as the FIFA 14 Studio shows them (a column of the squad table and a card below it)
+const ROLES: { key: 'captain' | keyof TeamDetail['takers']; label: MessageKey; icon: LucideIcon }[] = [
+  { key: 'captain', label: 'takers.captainRole', icon: Crown },
+  { key: 'penalty', label: 'takers.penalty', icon: Target },
+  { key: 'free_kick', label: 'takers.freeKick', icon: Goal },
+  { key: 'long_free_kick', label: 'takers.longFreeKick', icon: MoveUpRight },
+  { key: 'left_corner', label: 'takers.leftCorner', icon: CornerUpLeft },
+  { key: 'right_corner', label: 'takers.rightCorner', icon: CornerUpRight },
+]
+const roleOf = (data: TeamDetail, key: (typeof ROLES)[number]['key']) => (key === 'captain' ? data.captain : data.takers[key])
+
+/** Who is the captain and who takes each set piece (read-only). */
+function Takers({ data }: { data: TeamDetail }) {
+  const { t } = useI18n()
+  return (
+    <Section title={t('takers.title')}>
+      <div className="grid gap-x-8 gap-y-3 sm:grid-cols-2">
+        {ROLES.map(({ key, label, icon: Icon }) => {
+          const who = roleOf(data, key)
+          return (
+            <div key={key} className="grid gap-1 text-sm">
+              <span className="flex items-center gap-1.5 font-medium">
+                <Icon className="size-4" /> {t(label)}
+              </span>
+              {who ? (
+                <Link to={`/players/${who.id}`} className="hover:underline">
+                  {who.name}
+                </Link>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </Section>
   )
 }
 
@@ -208,6 +341,8 @@ function Formation({ data }: { data: TeamDetail }) {
     </Section>
   )
 }
+
+const SCROLL_RESERVE = 250 // height kept under the table for the captain and takers card (as the FIFA 14 Studio)
 
 function RosterTable({ data }: { data: TeamDetail }) {
   const { t } = useI18n()
@@ -237,18 +372,22 @@ function RosterTable({ data }: { data: TeamDetail }) {
         </div>
       }
     >
+      {/* the players scroll inside the card, with the header on top (like the FIFA 14 Studio's squad) */}
+      <FillScroll reserve={SCROLL_RESERVE}>
       <Table>
-        <TableHeader>
+        <TableHeader className="sticky top-0 z-10 shadow-[0_1px_0_var(--border)] [&_th]:bg-card">
           <TableRow>
             <TableHead className="w-10" />
             <TableHead className="w-10" />
-            <TableHead>{t('col.number')}</TableHead>
             <TableHead>{t('col.name')}</TableHead>
-            <TableHead>{t('col.inTeam')}</TableHead>
-            <TableHead>{t('col.position')}</TableHead>
-            <TableHead>{t('col.overall')}</TableHead>
-            <TableHead>{t('col.age')}</TableHead>
-            <TableHead>{t('col.nationality')}</TableHead>
+            <TableHead className="w-20 text-center">{t('col.overall')}</TableHead>
+            <TableHead className="w-20 text-center">{t('col.number')}</TableHead>
+            <TableHead className="w-28 text-center">{t('col.position')}</TableHead>
+            {ROLES.map(({ key, label, icon: Icon }) => (
+              <TableHead key={key} className="w-8 px-1 text-center" title={t(label)}>
+                <Icon className="mx-auto size-4" aria-label={t(label)} />
+              </TableHead>
+            ))}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -260,42 +399,81 @@ function RosterTable({ data }: { data: TeamDetail }) {
               <TableCell>
                 <Photo id={p.id} size={64} available={p.has_photo} className="size-8 rounded" />
               </TableCell>
-              <TableCell className="tabular-nums">{p.jersey_number ?? '—'}</TableCell>
               <TableCell>
                 <span className="inline-flex items-center gap-2 font-medium">
                   {p.name}
                   {p.has_face && <ScanFace className="size-4 text-emerald-600 dark:text-emerald-400" />}
                 </span>
               </TableCell>
-              <TableCell>
-                <Badge>{p.link_position_name ?? p.link_position ?? '—'}</Badge>
-              </TableCell>
-              <TableCell>{p.position ?? '—'}</TableCell>
-              <TableCell>
+              <TableCell className="text-center">
                 <OverallBadge value={p.overall} />
               </TableCell>
-              <TableCell className="tabular-nums">{p.birthdate_suspect ? '?' : (p.age ?? '—')}</TableCell>
-              <TableCell>{p.nationality ?? '—'}</TableCell>
+              <TableCell className="text-center tabular-nums">{p.jersey_number ?? '—'}</TableCell>
+              <TableCell className="text-center">
+                <Badge>{p.link_position_name ?? p.link_position ?? '—'}</Badge>
+              </TableCell>
+              {ROLES.map(({ key, label, icon: Icon }) => (
+                <TableCell key={key} className="px-1 text-center">
+                  {roleOf(data, key)?.id === p.id && <Icon className="mx-auto size-4 text-primary" aria-label={t(label)} />}
+                </TableCell>
+              ))}
             </TableRow>
           ))}
         </TableBody>
       </Table>
+      </FillScroll>
     </Section>
   )
 }
 
-const KIT_FIELD_LABELS: Record<string, MessageKey> = {
-  jerseycollargeometrytype: 'kit.collar',
-  jerseynamefonttype: 'kit.nameFont',
-  jerseynamelayouttype: 'kit.nameLayout',
-  jerseybacknamefontcase: 'kit.nameCase',
-  jerseybacknameplacementcode: 'kit.backNamePlacement',
-  numberfonttype: 'kit.numberFont',
-  numbercolor: 'kit.numberColor',
-  jerseyfrontnumberplacementcode: 'kit.frontNumberPlacement',
-  shortsnumberfonttype: 'kit.shortsNumberFont',
-  shortsnumbercolor: 'kit.shortsNumberColor',
-  shortsnumberplacementcode: 'kit.shortsNumberPlacement',
+/** A yes/no value of a kit (a placement code: 0 = no). */
+function YesNo({ on }: { on: boolean }) {
+  const { t } = useI18n()
+  return on ? (
+    <CircleCheck className="size-4 text-emerald-600 dark:text-emerald-400" aria-label={t('common.yes')} />
+  ) : (
+    <CircleX className="size-4 text-destructive" aria-label={t('common.no')} />
+  )
+}
+
+/** The kit's name and number values with their meaning (as the FIFA 14 Studio names them), in two columns. */
+function KitFacts({ kit: k }: { kit: KitInfo }) {
+  const { t } = useI18n()
+  const f = k.fields
+  const num = (v: number | null | undefined) => (v === null || v === undefined ? '—' : v)
+  const color = (rgb: RGB | null, code: number | null | undefined) =>
+    code === null || code === undefined ? (
+      '—'
+    ) : (
+      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+        {t('kit.colorN', { n: code })}
+        {rgb && <ColorDot rgb={rgb} />}
+      </span>
+    )
+  const layout = f.jerseynamelayouttype
+  const items: [string, React.ReactNode][] = [
+    [t('kit.nameColor'), k.name_color ? <ColorDot key="n" rgb={k.name_color} /> : '—'],
+    [t('kit.collar'), f.jerseycollargeometrytype === undefined || f.jerseycollargeometrytype === null ? '—' : t('kit.collarOption', { n: f.jerseycollargeometrytype })],
+    [t('kit.showName'), <YesNo key="s" on={!!f.jerseybacknameplacementcode} />],
+    [t('kit.nameLayout'), layout === 0 ? t('kit.nameStraight') : layout === 1 ? t('kit.nameArc') : num(layout)],
+    [t('kit.nameCase'), num(f.jerseybacknamefontcase)],
+    [t('kit.frontNumber'), <YesNo key="fn" on={!!f.jerseyfrontnumberplacementcode} />],
+    [t('kit.numberFont'), num(f.numberfonttype)],
+    [t('kit.numberColor'), color(k.number_rgb, f.numbercolor)],
+    [t('kit.shortsNumberOn'), <YesNo key="sn" on={!!f.shortsnumberplacementcode} />],
+    [t('kit.shortsNumberFont'), num(f.shortsnumberfonttype)],
+    [t('kit.shortsNumberColor'), color(k.shorts_number_rgb, f.shortsnumbercolor)],
+  ]
+  return (
+    <dl className="grid gap-x-8 gap-y-1.5 text-sm sm:grid-cols-2">
+      {items.map(([label, value]) => (
+        <div key={label} className="flex items-center justify-between gap-3">
+          <dt className="text-muted-foreground">{label}</dt>
+          <dd className="min-w-0 text-right break-words">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  )
 }
 
 function kitTitle(t: (k: MessageKey, p?: Record<string, unknown>) => string, kit: KitInfo) {
@@ -319,55 +497,56 @@ function Kits({ data }: { data: TeamDetail }) {
   const wearer = wearerOf(data.roster, kit.type)
   const preview = previewKit(token, data.id, kit.type, { collar: kit.fields.jerseycollargeometrytype ?? 0, number: wearer.number, name: wearer.name })
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="grid gap-6 2xl:grid-cols-2">
-        {data.kits.map((k) => (
-          <Section
-            key={k.type}
-            title={kitTitle(t, k)}
-            className={k.type === kit.type ? 'ring-2 ring-primary/50' : undefined}
-            action={
-              <div className="flex items-center gap-2">
-                <Badge>{k.where ?? '—'}</Badge>
-                <Button size="sm" variant={k.type === kit.type ? 'default' : 'outline'} onClick={() => setShown(k.type)}>
-                  <Box /> {t('preview.show3d')}
-                </Button>
+    <Section title={t('kit.title')} description={t('kit.hint')}>
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid gap-4 2xl:grid-cols-2">
+          {data.kits.map((k) => (
+            // the kit being previewed gets a ring, like in the FIFA 14 Studio
+            <div key={k.type} className={cn('space-y-4 rounded-lg border p-4', k.type === kit.type && 'ring-2 ring-primary/50')}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-medium">{kitTitle(t, k)}</p>
+                <div className="flex items-center gap-2">
+                  <Badge>{k.where ?? '—'}</Badge>
+                  <Button size="sm" variant={k.type === kit.type ? 'secondary' : 'ghost'} onClick={() => setShown(k.type)} title={t('kit.previewHint')}>
+                    <Eye /> {t('kit.preview')}
+                  </Button>
+                </div>
               </div>
-            }
-          >
-            <div className="flex flex-wrap gap-4">
-              <KitImage team={data.id} type={k.type} part="jersey" size={512} className="size-56 rounded border bg-muted/40" />
-              <KitImage team={data.id} type={k.type} part="shorts" size={512} className="h-56 w-56 rounded border bg-muted/40" />
+              <div className="flex flex-wrap gap-4">
+                <KitImage team={data.id} type={k.type} part="jersey" size={512} className="size-56 rounded border bg-muted/40" />
+                <KitImage team={data.id} type={k.type} part="shorts" size={512} className="h-56 w-56 rounded border bg-muted/40" />
+              </div>
+              <div className="space-y-3">
+                <KitFacts kit={k} />
+                {/* the long values, one per line */}
+                <Facts
+                  items={[
+                    [t('kit.nameFont'), k.fields.jerseynamefonttype === undefined || k.fields.jerseynamefonttype === null ? '—' : k.name_font_name ? `${k.name_font_name} (${k.fields.jerseynamefonttype})` : k.fields.jerseynamefonttype],
+                    [t('kit.file'), <span key="f" className="font-mono text-xs break-all">{k.source_path}</span>],
+                  ]}
+                />
+              </div>
             </div>
-            <div className="mt-4">
-              <Facts
-                items={[
-                  [t('kit.nameColor'), k.name_color ? <ColorDot key="n" rgb={k.name_color} /> : '—'],
-                  ...Object.entries(k.fields).map(([f, v]) => [KIT_FIELD_LABELS[f] ? t(KIT_FIELD_LABELS[f]) : f, v ?? '—'] as [string, React.ReactNode]),
-                  [t('kit.file'), <span key="f" className="font-mono text-xs">{k.source_path}</span>],
-                ]}
-              />
-            </div>
-          </Section>
-        ))}
-      </div>
-      <div className="space-y-2 rounded-lg border bg-card p-3 lg:sticky lg:top-0">
-        <div>
-          <p className="font-medium">{t('preview.kitTitle', { kit: kitTitle(t, kit) })}</p>
-          <p className="text-xs text-muted-foreground">{t('preview.kitHint')}</p>
+          ))}
         </div>
-        <Preview3D kit={preview} wearer={wearer.id} />
+        <div className="space-y-2 rounded-lg border bg-card p-3 lg:sticky lg:top-0">
+          <div>
+            <p className="font-medium">{t('preview.kitTitle', { kit: kitTitle(t, kit) })}</p>
+            <p className="text-xs text-muted-foreground">{t('preview.kitHint')}</p>
+          </div>
+          <Preview3D kit={preview} wearer={wearer.id} />
+        </div>
       </div>
-    </div>
+    </Section>
   )
 }
 
 function TeamStadium({ stadium, customName }: { stadium: StadiumInfo; customName: string | null }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <Stadium3D stadium={stadium} open={open} setOpen={setOpen} className={open ? 'h-[70vh]' : undefined} />
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <StadiumDetails stadium={stadium} customName={customName} />
         <StadiumDatabase stadium={stadium} className="xl:grid-cols-1" />
       </div>
@@ -379,7 +558,7 @@ function Stadiums({ data }: { data: TeamDetail }) {
   const { t } = useI18n()
   if (!data.stadiums.length) return <p className="py-6 text-sm text-muted-foreground">{t('teams.noStadium')}</p>
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {data.stadiums.map((s) => (
         <TeamStadium key={s.id} stadium={s} customName={data.stadiums.length === 1 ? data.stadium_custom_name : null} />
       ))}

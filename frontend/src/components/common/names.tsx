@@ -5,7 +5,7 @@ import { hasMessage, useI18n, type MessageKey } from '@/i18n'
  * labels (e.g. `nationName`). It fills the box it is in and scrolls inside it, with the header always on top. */
 export function LanguageNames({ columns, prefix, names }: { columns: string[]; prefix: string; names: Record<string, Record<string, string>> }) {
   const { t } = useI18n()
-  const shown = columns.filter((key) => names[key])
+  const shown = columns // every column, even when the game has no text in it (as the FIFA 14 Studio's grid)
   const languages = [...new Set(Object.values(names).flatMap((byLang) => Object.keys(byLang)))].sort()
   const label = (key: string) => (hasMessage(`${prefix}.${key}`) ? t(`${prefix}.${key}` as MessageKey) : key)
   if (!languages.length) return <p className="text-sm text-muted-foreground">{t('names.none')}</p>

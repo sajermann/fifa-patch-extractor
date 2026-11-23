@@ -114,6 +114,9 @@ def test_nations(client):
 
 def test_team_stadium(client):
     t = client.get(f'/api/teams/{fakegame.TEAM}').json()
+    assert t['language_names']['full'] == {'eng_us': 'Test Athletic Club'} and t['name_keys'][0] == 'full'
+    assert set(t['ratings']) == {'attack', 'midfield', 'defense'}
+    assert [lg['id'] for lg in t['league_rows']] == [fakegame.LEAGUE]
     stadium, = t['stadiums']
     assert stadium['id'] == fakegame.STADIUM and stadium['name'] == 'Test Ground' and stadium['capacity'] == 12345
     assert stadium['home_team']['id'] == fakegame.TEAM and stadium['country'] == 'Republic of Nowhere'

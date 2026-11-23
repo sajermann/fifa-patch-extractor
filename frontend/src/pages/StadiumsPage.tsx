@@ -28,7 +28,7 @@ export function StadiumsPage() {
         <p className="text-sm text-muted-foreground">{t('stadiums.subtitle')}</p>
       </div>
       <FilterBar active={list.active} onClear={list.clear}>
-        <SearchInput value={list.values.q} onChange={(v) => list.update({ q: v })} placeholder={t('stadiums.search')} className="w-80" />
+        <SearchInput value={list.values.q} onChange={(v) => list.update({ q: v })} placeholder={t('stadiums.search')} />
         <FilterSelect
           value={list.values.country}
           onChange={(v) => list.update({ country: v })}
@@ -39,7 +39,6 @@ export function StadiumsPage() {
           value={list.values.home}
           onChange={(v) => list.update({ home: v })}
           allLabel={t('filter.homeAny')}
-          className="w-56"
           options={[
             { value: 'yes', label: t('filter.homeYes') },
             { value: 'no', label: t('filter.homeNo') },

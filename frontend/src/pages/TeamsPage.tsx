@@ -32,7 +32,6 @@ export function TeamsPage() {
           value={list.values.league}
           onChange={(v) => list.update({ league: v })}
           allLabel={t('filter.allLeagues')}
-          className="w-56"
           options={(options?.leagues ?? []).map((l) => ({ value: String(l.id), label: l.name }))}
         />
         <BasketFilter value={list.values.in_basket} onChange={(v) => list.update({ in_basket: v })} />

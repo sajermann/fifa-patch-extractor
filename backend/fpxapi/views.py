@@ -184,7 +184,8 @@ SORTS = {
     'nations': {'name', 'id', 'confederation', 'league_count', 'player_count'},
     'leagues': {'name', 'id', 'level', 'country', 'team_count'},
     'teams': {'name', 'id', 'overall', 'league', 'player_count', 'kit_count'},
-    'players': {'name', 'id', 'overall', 'potential', 'age', 'position_code', 'nationality', 'team', 'height'},
+    'players': {'name', 'id', 'overall', 'potential', 'age', 'birthdate', 'position_code', 'nationality', 'team',
+                'height'},
 }
 DEFAULT_SORT = {'stadiums': ('name', 'asc'), 'nations': ('name', 'asc'), 'leagues': ('name', 'asc'), 'teams': ('name', 'asc'), 'players': ('overall', 'desc')}
 
@@ -194,7 +195,8 @@ def page(rows: list[dict], kind: str, sort: str | None, direction: str | None, p
     key, default_dir = DEFAULT_SORT[kind]
     if sort in SORTS[kind]:
         key = sort
-        default_dir = 'asc' if key in ('name', 'country', 'league', 'nationality', 'team', 'position_code') else 'desc'
+        default_dir = 'asc' if key in ('name', 'country', 'league', 'nationality', 'team', 'position_code',
+                                       'birthdate') else 'desc'
     desc = (direction or default_dir) == 'desc'
     present = [r for r in rows if r.get(key) is not None]
     missing = [r for r in rows if r.get(key) is None]

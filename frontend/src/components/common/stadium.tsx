@@ -132,7 +132,7 @@ export function StadiumDetails({ stadium: s, customName, title, className, scrol
 export function StadiumDatabase({ stadium: s, className }: { stadium: StadiumInfo; className?: string }) {
   const { t } = useI18n()
   return (
-    <div className={cn('grid items-start gap-6 xl:grid-cols-2', className)}>
+    <div className={cn('grid items-start gap-4 xl:grid-cols-2', className)}>
       <Section title={t('stadium.files', { count: s.files.length })}>
         <p className="mb-3 text-xs text-muted-foreground">{t('stadium.filesHint')}</p>
         <ul className="space-y-1 text-xs">

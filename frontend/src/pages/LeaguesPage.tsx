@@ -37,7 +37,6 @@ export function LeaguesPage() {
           value={list.values.level}
           onChange={(v) => list.update({ level: v })}
           allLabel={t('filter.allLevels')}
-          className="w-36"
           options={(options?.levels ?? []).map((l) => ({ value: String(l), label: t('filter.level', { level: l }) }))}
         />
         <BasketFilter value={list.values.in_basket} onChange={(v) => list.update({ in_basket: v })} />
@@ -98,7 +97,6 @@ export function BasketFilter({ value, onChange }: { value: string; onChange: (v:
       value={value}
       onChange={onChange}
       allLabel={t('filter.basketAny')}
-      className="w-44"
       options={[
         { value: 'yes', label: t('filter.basketIn') },
         { value: 'no', label: t('filter.basketOut') },

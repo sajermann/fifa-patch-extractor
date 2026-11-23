@@ -1,19 +1,61 @@
 import { PackageCheck, PackagePlus } from 'lucide-react'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import type { Raw } from '@/api/types'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
-/** A card with a title. `scroll`: the card takes the height it is given and its content scrolls inside it. */
-export function Section({ title, children, action, className, scroll }: { title: ReactNode; children: ReactNode; action?: ReactNode; className?: string; scroll?: boolean }) {
+/** Max height for a scroll box so that, with the page scrolled to the top, it ends at the bottom of the visible area
+ * (the scrolling <main>): the box scrolls instead of the page. Follows window resizes and the content above it. */
+export function useFillHeight<E extends HTMLElement>(min = 120, reserve = 0) {
+  const ref = useRef<E>(null)
+  const [height, setHeight] = useState<number>()
+  useLayoutEffect(() => {
+    const el = ref.current
+    const scroller = el?.closest('main')
+    if (!el || !scroller) return
+    const card = el.closest('[data-slot=card]') ?? el
+    const measure = () => {
+      const box = el.getBoundingClientRect()
+      const top = box.top - scroller.getBoundingClientRect().top + scroller.scrollTop
+      const below = card.getBoundingClientRect().bottom - box.bottom // the card's padding under the box
+      const padding = parseFloat(getComputedStyle(scroller).paddingBottom) || 0
+      setHeight(Math.max(min, Math.floor(scroller.clientHeight - top - below - padding - reserve)))
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(scroller)
+    if (scroller.firstElementChild) observer.observe(scroller.firstElementChild)
+    return () => observer.disconnect()
+  }, [min, reserve])
+  return { ref, style: height ? { maxHeight: height } : undefined }
+}
+
+/** A box that scrolls on its own and is as tall as what is left of the screen, so the page itself does not scroll.
+ * A table inside keeps its header sticky (the table's own container stops being a scroll box). `reserve`: height left
+ * free under the box for something that must stay in view (the box is then at least 240 tall). */
+export function FillScroll({ children, className, reserve }: { children: ReactNode; className?: string; reserve?: number }) {
+  const fill = useFillHeight<HTMLDivElement>(reserve ? 240 : 120, reserve)
+  return (
+    <div ref={fill.ref} style={fill.style} className={cn('overflow-auto [&>[data-slot=table-container]]:overflow-visible', className)}>
+      {children}
+    </div>
+  )
+}
+
+/** A card with a title (and a `description` under it, as in the FIFA 14 Studio). `scroll`: the card takes the height it
+ * is given and its content scrolls inside it. */
+export function Section({ title, description, children, action, className, scroll }: { title: ReactNode; description?: ReactNode; children: ReactNode; action?: ReactNode; className?: string; scroll?: boolean }) {
   return (
     <Card className={cn(scroll && 'flex min-h-0 flex-col', className)}>
       <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-        <CardTitle className="text-base">{title}</CardTitle>
+        <div className="min-w-0 space-y-1">
+          <CardTitle className="text-base">{title}</CardTitle>
+          {description && <CardDescription>{description}</CardDescription>}
+        </div>
         {action}
       </CardHeader>
       <CardContent className={scroll ? 'min-h-0 flex-1 overflow-auto' : undefined}>{children}</CardContent>
