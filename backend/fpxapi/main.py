@@ -325,6 +325,8 @@ def stadium_detail(sid: int):
     return {
         **_with_basket('stadiums', [idx.stadiums[sid]])[0],
         'detail': idx.stadium(sid),
+        'name_keys': list(fifa14.STADIUM_NAME_STRINGS),
+        'language_names': src.language_names('stadium', sid),  # the Data tab (StadiumName_ in every language)
         'teams': [{**r, 'stadium_custom_name': src.stadium_custom_names.get(r['id'])}
                   for r in _with_basket('teams', teams)],
     }

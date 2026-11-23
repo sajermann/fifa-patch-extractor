@@ -9,6 +9,37 @@ export function LanguageNames({ columns, prefix, names }: { columns: string[]; p
   const languages = [...new Set(Object.values(names).flatMap((byLang) => Object.keys(byLang)))].sort()
   const label = (key: string) => (hasMessage(`${prefix}.${key}`) ? t(`${prefix}.${key}` as MessageKey) : key)
   if (!languages.length) return <p className="text-sm text-muted-foreground">{t('names.none')}</p>
+  // one name only (a stadium's): the languages in two halves side by side on wide screens, as the FIFA 14 Studio
+  if (shown.length === 1) {
+    const half = Math.ceil(languages.length / 2)
+    const key = shown[0]
+    return (
+      <div className="grid items-start gap-x-6 lg:grid-cols-2">
+        {[languages.slice(0, half), languages.slice(half)].map((codes, i) => (
+          <table key={i} className="w-full text-sm">
+            <colgroup>
+              <col className="w-24" />
+              <col />
+            </colgroup>
+            <thead>
+              <tr className="border-b text-left text-muted-foreground">
+                <th className="px-2 py-2 font-medium">{t('names.language')}</th>
+                <th className="px-2 py-2 font-medium">{label(key)}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {codes.map((code) => (
+                <tr key={code} className="border-b last:border-0">
+                  <td className="px-2 py-1.5 font-mono text-xs text-muted-foreground">{code}</td>
+                  <td className="px-2 py-1.5">{names[key]?.[code] ?? <span className="text-muted-foreground">—</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ))}
+      </div>
+    )
+  }
   return (
     <table className="w-full text-sm">
       <colgroup>

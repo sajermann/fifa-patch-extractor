@@ -36,7 +36,8 @@ STADIUM_NAME_STRINGS = {'full': 'StadiumName_'}
 # the names read in every language (screens of a country and a league): {kind: (keys, string id prefixes)}
 LANGUAGE_NAME_KINDS = {'team': (TEAM_NAME_STRINGS, ('TeamName_', 'CT_TeamName_')),
                        'nation': (NATION_NAME_STRINGS, ('NationName_', 'nationname_abbr3_')),
-                       'league': (LEAGUE_NAME_STRINGS, ('LeagueName_', 'Labbr_', 'TrophyName_'))}
+                       'league': (LEAGUE_NAME_STRINGS, ('LeagueName_', 'Labbr_', 'TrophyName_')),
+                       'stadium': (STADIUM_NAME_STRINGS, ('StadiumName_',))}
 
 # pictures (game paths; {} = the id)
 CREST = 'data/ui/imgassets/crest/l{}.dds'
@@ -285,8 +286,8 @@ class Fifa14Source:
         return sorted(n for n in found if not n.endswith('_upd'))
 
     def language_names(self, kind: str, oid: int) -> dict[str, dict[str, str]]:
-        """{key: {language: text}} of a team, country or league (`kind` 'team' / 'nation' / 'league') in every language database of
-        the game (each kind is read once, on demand)."""
+        """{key: {language: text}} of a team, country, league or stadium (`kind` 'team' / 'nation' / 'league' /
+        'stadium') in every language database of the game (each kind is read once, on demand)."""
         if kind not in self._names_by_language:
             table, starts = LANGUAGE_NAME_KINDS[kind]
             self._names_by_language[kind] = {lang: self._names(table, starts, lang) for lang in self.languages()}

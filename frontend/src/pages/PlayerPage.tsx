@@ -50,7 +50,7 @@ export function PlayerPage() {
   if (error) return <p className="text-destructive">{error.message}</p>
   if (!data) return <LoadingBlock />
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <BackButton fallback={{ to: '/players', label: t('nav.players') }} />
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
         <div className="flex min-w-0 flex-wrap items-center gap-3">

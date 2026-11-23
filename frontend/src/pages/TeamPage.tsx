@@ -15,7 +15,7 @@ import { ColorDot, Crest, KitImage, LeagueImage, Photo } from '@/components/comm
 import { LanguageNames } from '@/components/common/names'
 import { FormationPitch } from '@/components/common/FormationPitch'
 import { Preview3D } from '@/components/common/Preview3D'
-import { Stadium3D, StadiumDatabase, StadiumDetails } from '@/components/common/stadium'
+import { Stadium3D, StadiumDetails } from '@/components/common/stadium'
 import { LoadingBlock } from '@/components/layout/LoadingBlock'
 import { hasMessage, useI18n, type MessageKey } from '@/i18n'
 import { previewKit } from '@/lib/preview'
@@ -541,15 +541,13 @@ function Kits({ data }: { data: TeamDetail }) {
   )
 }
 
+/** The team's stadium, as the FIFA 14 Studio's tab (without its buttons): data and pictures in one box (a click opens a
+ * picture big), the 3D preview below, always on. Files and database row: the stadium's own page. */
 function TeamStadium({ stadium, customName }: { stadium: StadiumInfo; customName: string | null }) {
-  const [open, setOpen] = useState(false)
   return (
     <div className="space-y-4">
-      <Stadium3D stadium={stadium} open={open} setOpen={setOpen} className={open ? 'h-[70vh]' : undefined} />
-      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        <StadiumDetails stadium={stadium} customName={customName} />
-        <StadiumDatabase stadium={stadium} className="xl:grid-cols-1" />
-      </div>
+      <StadiumDetails stadium={stadium} customName={customName} grid />
+      <Stadium3D stadium={stadium} open className="h-[70vh]" />
     </div>
   )
 }

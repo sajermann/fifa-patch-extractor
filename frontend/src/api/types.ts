@@ -178,6 +178,9 @@ export interface StadiumInfo {
 
 export interface StadiumDetail extends StadiumRow {
   detail: StadiumInfo
+  name_keys: string[]
+  /** StadiumName_ in every language of the game: {key: {language: text}} */
+  language_names: Record<string, Record<string, string>>
   teams: (TeamRow & { stadium_custom_name: string | null })[]
 }
 
