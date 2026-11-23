@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query'
+import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Check, Minus, ScanFace } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/api/client'
 import type { PlayerDetail } from '@/api/types'
@@ -14,10 +16,9 @@ import { hasMessage, useI18n, type MessageKey } from '@/i18n'
 import { useTab } from '@/lib/tabs'
 import { cn } from '@/lib/utils'
 import { useBasketOp, useToken } from '@/state/queries'
-import { NameList } from './TeamPage'
 import { BackButton, usePageLabel } from '@/lib/back'
 
-const TABS = ['overview', 'attributes', 'traits', 'appearance', 'accessories', 'raw'] as const
+const TABS = ['data', 'attributes', 'traits', 'look', 'accessories', 'raw'] as const
 
 // the traits as the game groups them (as on the FIFA 14 Studio's Traits tab)
 const GOALKEEPER_TRAITS = ['pushes_up_for_corners', 'puncher', 'gk_long_thrower', 'gk_one_on_one', 'gk_flat_kick']
@@ -51,31 +52,15 @@ export function PlayerPage() {
   return (
     <div className="space-y-6">
       <BackButton fallback={{ to: '/players', label: t('nav.players') }} />
-      <div className="flex flex-wrap items-center gap-5">
-        <Photo id={id} size={256} available={data.has_photo} className="size-24 rounded-lg bg-muted/40" />
-        <div className="min-w-0 flex-1">
-          <h1 className="flex items-center gap-2 text-2xl font-semibold">
-            {data.name}
-            {data.has_face && (
-              <span title={t('players.hasFace')}>
-                <ScanFace className="size-5 text-emerald-600 dark:text-emerald-400" />
-              </span>
-            )}
-          </h1>
-          <p className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-3">
+          <Photo id={id} size={256} available={data.has_photo} className="size-24 shrink-0 rounded-lg bg-muted/40" />
+          <h1 className="min-w-0 text-2xl font-semibold break-words">{data.name}</h1>
+          <span className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground tabular-nums">
+            {data.has_face && <ScanFace className="size-5 text-emerald-600 dark:text-emerald-400" aria-label={t('players.hasFace')} />}
             <OverallBadge value={data.overall} />
-            {data.positions.map((p) => p.name).join(' / ')}
-            <span>·</span>
-            <Flag id={data.nationality_id} className="h-3.5 w-5" />{' '}
-            {data.nationality_id !== null && data.nationality ? (
-              <Link to={`/nations/${data.nationality_id}`} className="hover:underline">
-                {data.nationality}
-              </Link>
-            ) : (
-              '—'
-            )}
-            <span>·</span>#{data.id}
-          </p>
+            ID {data.id}
+          </span>
         </div>
         <BasketButton
           inside={data.in_basket}
@@ -85,15 +70,15 @@ export function PlayerPage() {
       </div>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
-          <TabsTrigger value="overview">{t('tab.overview')}</TabsTrigger>
+          <TabsTrigger value="data">{t('player.tab.data')}</TabsTrigger>
           <TabsTrigger value="attributes">{t('tab.attributes')}</TabsTrigger>
           <TabsTrigger value="traits">{t('player.tab.traits')}</TabsTrigger>
-          <TabsTrigger value="appearance">{t('tab.appearance')}</TabsTrigger>
+          <TabsTrigger value="look">{t('player.tab.look')}</TabsTrigger>
           <TabsTrigger value="accessories">{t('player.tab.accessories')}</TabsTrigger>
           <TabsTrigger value="raw">{t('tab.raw')}</TabsTrigger>
         </TabsList>
-        <TabsContent value="overview">
-          <Overview data={data} />
+        <TabsContent value="data">
+          <DataTab data={data} />
         </TabsContent>
         <TabsContent value="attributes">
           <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
@@ -120,18 +105,13 @@ export function PlayerPage() {
           <Traits data={data} />
         </TabsContent>
         <TabsContent value="accessories">
-          <div className="grid gap-6 lg:grid-cols-2">
-            <Section title={t('fieldGroup.accessories')}>
-              <Facts items={Object.entries(data.accessories).map(([k, v]) => [label(t, 'field', k), v])} />
-            </Section>
-            <Section title={t('fieldGroup.animations')}>
-              <Facts items={Object.entries(data.animations).map(([k, v]) => [label(t, 'field', k), v])} />
-            </Section>
+          <div className="space-y-4">
+            <CodeGroup title={t('fieldGroup.accessories')} codes={data.accessories} />
+            <CodeGroup title={t('fieldGroup.animations')} codes={data.animations} />
           </div>
         </TabsContent>
-        <TabsContent value="appearance">
-          <div className="grid items-start gap-6 lg:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_340px]">
-            <PlayerPreview data={data} />
+        <TabsContent value="look">
+          <LookTab data={data}>
             <Section title={t('section.appearanceCodes')}>
               <p className="mb-3 text-xs text-muted-foreground">{t('players.appearanceHint')}</p>
               <Facts items={Object.entries(data.appearance).map(([k, v]) => [<span key={k} className="font-mono text-xs">{k}</span>, v])} />
@@ -150,7 +130,7 @@ export function PlayerPage() {
                 <p className="text-sm text-muted-foreground">{t('players.noFace')}</p>
               )}
             </Section>
-          </div>
+          </LookTab>
         </TabsContent>
         <TabsContent value="raw">
           <Section title={t('section.rawRow', { table: 'players' })}>
@@ -158,6 +138,50 @@ export function PlayerPage() {
           </Section>
         </TabsContent>
       </Tabs>
+    </div>
+  )
+}
+
+const LOOK_MIN_HEIGHT = 360
+const LOOK_BOTTOM_GAP = 16
+
+/** Height that takes an element from where it starts to the end of the viewport (a small gap below it), as the
+ * FIFA 14 Studio's Look tab. */
+function useHeightToViewportEnd() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [height, setHeight] = useState<number>()
+  useLayoutEffect(() => {
+    const measure = () => {
+      if (ref.current) setHeight(Math.max(LOOK_MIN_HEIGHT, window.innerHeight - ref.current.getBoundingClientRect().top - LOOK_BOTTOM_GAP))
+    }
+    measure()
+    window.addEventListener('resize', measure)
+    return () => window.removeEventListener('resize', measure)
+  }, [])
+  return { ref, height }
+}
+
+/** The Look tab laid out as the FIFA 14 Studio's: the codes (`children`) in a column that scrolls on its own, the 3D
+ * preview taking the free width and the photo on the right. */
+function LookTab({ data, children }: { data: PlayerDetail; children: ReactNode }) {
+  const { t } = useI18n()
+  const column = useHeightToViewportEnd()
+  return (
+    <div className="flex flex-col gap-4 xl:flex-row xl:items-start">
+      <div
+        ref={column.ref}
+        style={{ '--look-height': `${column.height}px` } as CSSProperties}
+        className="order-3 w-[420px] max-w-full space-y-4 xl:order-1 xl:h-(--look-height) xl:shrink-0 xl:overflow-auto"
+      >
+        {children}
+      </div>
+      <PlayerPreview data={data} />
+      <Card className="order-2 h-fit w-full max-w-56 shrink-0 gap-2 overflow-hidden py-0 xl:sticky xl:top-4 xl:order-3 xl:w-56">
+        <div className="flex aspect-[3/4] items-center justify-center bg-muted">
+          <Photo id={data.id} size={256} available={data.has_photo} className="size-full object-contain" />
+        </div>
+        <p className="px-4 pb-3 text-center text-xs text-muted-foreground">{data.has_photo ? t('look.photoReference') : t('look.noPhoto')}</p>
+      </Card>
     </div>
   )
 }
@@ -174,14 +198,17 @@ function PlayerPreview({ data }: { data: PlayerDetail }) {
     name: data.names.jersey || data.names.last || data.names.common,
   })
   return (
-    <div className="space-y-2 rounded-lg border bg-card p-3 lg:col-span-2 xl:sticky xl:top-0 xl:order-last xl:col-span-1">
-      <Preview3D kit={kit} wearer={data.id} initialView="face" />
-      <p className="text-center text-xs text-muted-foreground">
-        {team ? t('preview.wearsKit', { team: team.name ?? `#${team.id}` }) : t('preview.noTeam')}
-        {!data.has_face && ` ${t('preview.genericFace')}`}
-      </p>
-      {look?.generic_in_game && <p className="text-center text-xs text-amber-700 dark:text-amber-300">{t('preview.genericInGame')}</p>}
-    </div>
+    // the 3D preview takes all the free width, pushing the photo to the right
+    <Card className="order-1 h-fit min-w-0 flex-1 gap-2 overflow-hidden py-0 xl:sticky xl:top-4 xl:order-2">
+      <Preview3D kit={kit} wearer={data.id} initialView="face" className="aspect-[3/4] max-h-[75vh] w-full bg-gradient-to-b from-muted to-background" />
+      <div className="px-4 pb-3 text-center text-xs text-muted-foreground">
+        <p>
+          {team ? t('preview.wearsKit', { team: team.name ?? `#${team.id}` }) : t('preview.noTeam')}
+          {!data.has_face && ` ${t('preview.genericFace')}`}
+        </p>
+        {look?.generic_in_game && <p className="text-amber-700 dark:text-amber-300">{t('preview.genericInGame')}</p>}
+      </div>
+    </Card>
   )
 }
 
@@ -215,54 +242,102 @@ function Traits({ data }: { data: PlayerDetail }) {
   )
 }
 
-function Overview({ data }: { data: PlayerDetail }) {
+/** The codes of one group (accessories, animations), read-only, laid out as the FIFA 14 Studio's. */
+function CodeGroup({ title, codes }: { title: string; codes: Record<string, number> }) {
+  const { t } = useI18n()
+  return (
+    <Section title={title} description={t('players.codesHint')}>
+      <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
+        {Object.entries(codes).map(([k, v]) => (
+          <div key={k} className="grid gap-1.5">
+            <p className="text-sm font-medium">{label(t, 'field', k)}</p>
+            <p className="text-sm text-muted-foreground tabular-nums">{v}</p>
+          </div>
+        ))}
+      </div>
+    </Section>
+  )
+}
+
+/** A field's label with its hint under it (as the FIFA 14 Studio's form shows them). */
+function FieldLabel({ name }: { name: string }) {
+  const { t } = useI18n()
+  const hint = `field.${name}.hint`
+  return (
+    <span>
+      {label(t, 'field', name)}
+      {hasMessage(hint) && <span className="block text-xs text-muted-foreground">{t(hint as MessageKey)}</span>}
+    </span>
+  )
+}
+
+const stars = (n: number | undefined) => (n === undefined || n === null ? '—' : `${n} ★`)
+
+function DataTab({ data }: { data: PlayerDetail }) {
   const { t } = useI18n()
   const op = useBasketOp()
   const pick = (team: number, on: boolean) => op.mutate({ op: 'pick', args: { team, player: data.id, on } })
+  const a = data.attributes
+  const position = (i: number) => data.positions[i]?.name ?? '—'
+  const facts = (rows: [string, ReactNode][]) => <Facts items={rows.map(([name, value]) => [<FieldLabel key={name} name={name} />, value])} />
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <Section title={t('section.names')}>
-        <NameList names={data.names} prefix="playerName" />
-      </Section>
-      <Section title={t('section.details')}>
-        <Facts
-          items={[
-            [
-              t('players.birthdate'),
-              data.birthdate ? (
-                <span key="b">
-                  {data.birthdate} {data.birthdate_suspect ? <Badge tone="warn">{t('players.birthdateSuspect')}</Badge> : data.age !== null && `(${t('players.ageYears', { age: data.age })})`}
-                </span>
-              ) : (
-                '—'
-              ),
-            ],
-            [t('players.height'), data.height ? `${data.height} cm` : '—'],
-            [t('players.weight'), data.weight ? `${data.weight} kg` : '—'],
-            [t('players.foot'), data.preferred_foot ? t(`foot.${data.preferred_foot}`) : '—'],
-            [t('players.positions'), data.positions.map((p) => p.name).join(', ') || '—'],
-            [t('players.photoFrom'), data.photo_where ?? '—'],
-            [t('players.standalone'), data.standalone ? t('common.yes') : t('common.no')],
-          ]}
-        />
-      </Section>
-      <Section title={t('fieldGroup.career')}>
-        <Facts
-          items={[
-            [t('field.contractvaliduntil'), data.career.contract_until ?? '—'],
-            [t('field.playerjointeamdate'), data.career.joined ?? '—'],
-            [t('field.isretiring'), data.career.retiring ? t('common.yes') : t('common.no')],
-          ]}
-        />
-      </Section>
-      <Section title={t('section.teamsOfPlayer')} className="lg:col-span-2">
+    <div className="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-[1fr_22rem]">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+          <Section title={t('fieldGroup.names')}>
+            {facts([
+              ['name.first', data.names.first || '—'],
+              ['name.last', data.names.last || '—'],
+              ['name.common', data.names.common || '—'],
+              ['name.jersey', data.names.jersey || '—'],
+            ])}
+          </Section>
+          <Section title={t('fieldGroup.info')}>
+            {facts([
+              [
+                'birthdate',
+                data.birthdate ? (
+                  <span key="b">
+                    {data.birthdate} {data.birthdate_suspect ? <Badge tone="warn">{t('players.birthdateSuspect')}</Badge> : data.age !== null && `(${t('players.ageYears', { age: data.age })})`}
+                  </span>
+                ) : (
+                  '—'
+                ),
+              ],
+              ['height', data.height ?? '—'],
+              ['weight', data.weight ?? '—'],
+              ['preferredfoot', data.preferred_foot ? t(`foot.${data.preferred_foot}`) : '—'],
+              [
+                'nationality',
+                <span key="n" className="inline-flex items-center gap-2">
+                  <Flag id={data.nationality_id} className="h-3.5 w-5" />
+                  {data.nationality_id !== null && data.nationality ? (
+                    <Link to={`/nations/${data.nationality_id}`} className="hover:underline">
+                      {data.nationality}
+                    </Link>
+                  ) : (
+                    '—'
+                  )}
+                </span>,
+              ],
+            ])}
+          </Section>
+        </div>
+        <Section title={t('photo.title')} description={t('players.photoFromHint', { where: data.photo_where ?? '—' })}>
+          <div className="mx-auto flex size-40 items-center justify-center overflow-hidden rounded-lg border border-dashed bg-[repeating-conic-gradient(var(--muted)_0_25%,transparent_0_50%)] bg-[length:16px_16px]">
+            <Photo id={data.id} size={256} available={data.has_photo} className="size-full object-contain" />
+          </div>
+        </Section>
+      </div>
+      <Section title={t('section.teamsOfPlayer')}>
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead className="w-10" />
+              {/* the team takes the free width, pushing No. and position to the right (as the FIFA 14 Studio's) */}
               <TableHead>{t('col.team')}</TableHead>
-              <TableHead>{t('col.number')}</TableHead>
-              <TableHead>{t('col.inTeam')}</TableHead>
+              <TableHead className="w-28 text-center">{t('col.number')}</TableHead>
+              <TableHead className="w-28 text-center">{t('col.position')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -276,8 +351,8 @@ function Overview({ data }: { data: PlayerDetail }) {
                     {tm.name ?? `#${tm.id}`}
                   </Link>
                 </TableCell>
-                <TableCell className="tabular-nums">{tm.jersey_number ?? '—'}</TableCell>
-                <TableCell>
+                <TableCell className="text-center tabular-nums">{tm.jersey_number ?? '—'}</TableCell>
+                <TableCell className="text-center">
                   <Badge>{tm.position_name ?? tm.position ?? '—'}</Badge>
                 </TableCell>
               </TableRow>
@@ -285,7 +360,35 @@ function Overview({ data }: { data: PlayerDetail }) {
           </TableBody>
         </Table>
         <p className="mt-2 text-xs text-muted-foreground">{t('players.pickInTeamHint')}</p>
+        {data.standalone && <p className="mt-1 text-xs text-muted-foreground">{t('players.standaloneHint')}</p>}
       </Section>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Section title={t('fieldGroup.positions')}>
+          {facts([
+            ['preferredposition1', position(0)],
+            ['preferredposition2', position(1)],
+            ['preferredposition3', position(2)],
+            ['preferredposition4', position(3)],
+          ])}
+        </Section>
+        <Section title={t('fieldGroup.style')}>
+          {facts([
+            ['potential', a.potential ?? '—'],
+            ['skillmoves', stars(a.skill_moves === undefined ? undefined : a.skill_moves + 1)],
+            ['weakfootabilitytypecode', stars(a.weak_foot)],
+            ['internationalrep', stars(a.international_rep)],
+            ['attackingworkrate', a.attacking_work_rate ?? '—'],
+            ['defensiveworkrate', a.defensive_work_rate ?? '—'],
+          ])}
+        </Section>
+        <Section title={t('fieldGroup.career')}>
+          {facts([
+            ['contractvaliduntil', data.career.contract_until ?? '—'],
+            ['playerjointeamdate', data.career.joined ?? '—'],
+            ['isretiring', data.career.retiring ? t('common.yes') : t('common.no')],
+          ])}
+        </Section>
+      </div>
     </div>
   )
 }

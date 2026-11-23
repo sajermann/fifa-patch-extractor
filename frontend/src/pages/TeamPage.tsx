@@ -29,7 +29,7 @@ const TABS = ['data', 'crest', 'kits', 'leagues', 'roster', 'stadium', 'raw'] as
 const NAME_COLUMNS = ['full', 'abbr15', 'abbr10', 'abbr7', 'abbr3', 'commentary']
 
 /** Every name the game has for the item, labelled. */
-export function NameList({ names, prefix }: { names: Record<string, string>; prefix: 'teamName' | 'leagueName' | 'playerName' | 'nationName' | 'stadiumName' }) {
+export function NameList({ names, prefix }: { names: Record<string, string>; prefix: 'teamName' | 'leagueName' | 'nationName' | 'stadiumName' }) {
   const { t } = useI18n()
   return (
     <Facts
