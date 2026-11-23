@@ -103,6 +103,38 @@ TRAITS2 = ('fancy_feet', 'fancy_passes', 'fancy_flicks', 'stutter_penalty', 'chi
            'diving_header', 'driven_pass', 'gk_flat_kick', 'one_club_player', 'team_player')
 TRAITS = {**{k: ('trait1', i) for i, k in enumerate(TRAITS1)}, **{k: ('trait2', i) for i, k in enumerate(TRAITS2)}}
 ACCESSORIES = tuple(f'{kind}{n}' for n in (1, 2, 3, 4) for kind in ('accessorycode', 'accessorycolourcode'))
+# accessorycode1-4 + accessorycolourcode1-4 are 4 slots of a list (any order); each code is one thing on one side of
+# the body, checked in the game. Places in the order of the game's Accessories screen, then what only shows on the pitch.
+ACCESSORY_PLACES = {
+    'ankle_left': (14,), 'ankle_right': (15,),
+    'hands': (16, 18, 19),                     # gloves; 18/19 = a pair of goalkeeper gloves (colour = glove model)
+    'wrist_left': (8, 6, 24, 26, 4),           # band, bandage, wide band, bracelet, watch
+    'wrist_right': (9, 7, 25, 27, 5),
+    'knee_left': (10, 12), 'knee_right': (11, 13),  # tape, knee support
+    'fingers_left': (22,), 'fingers_right': (23,),
+    'hand_left': (28, 30), 'hand_right': (29, 31),  # yellow / red card held in the hand
+    'ear': (2,),                               # earphone
+}
+ACCESSORY_TEXTURED = (2, 4, 5, 28, 29, 30, 31)  # drawn from their own picture: the colour does not apply
+ACCESSORY_MODEL = (18, 19)                     # the colour picks the glove model
+
+
+def accessories_by_place(row: dict) -> dict:
+    """A players row's accessory slots as the game's screen shows them: what each place of the body has (code 0 =
+    nothing; the first slot wins if two share a place), how many slots are used and how many hold codes with no
+    known place."""
+    slots = [(row.get(f'accessorycode{n}') or 0, row.get(f'accessorycolourcode{n}') or 0) for n in (1, 2, 3, 4)]
+    places = []
+    for place, codes in ACCESSORY_PLACES.items():
+        code, colour = next(((c, k) for c, k in slots if c in codes), (0, 0))
+        places.append({'place': place, 'code': code, 'colour': colour, 'single': len(codes) == 1,
+                       'colour_kind': 'none' if not code or code in ACCESSORY_TEXTURED
+                       else 'model' if code in ACCESSORY_MODEL else 'colour'})
+    known = {c for codes in ACCESSORY_PLACES.values() for c in codes}
+    return {'places': places, 'used': sum(1 for c, _ in slots if c), 'slots': len(slots),
+            'others': sum(1 for c, _ in slots if c and c not in known)}
+
+
 ANIMATIONS = ('runningcode1', 'runningcode2', 'finishingcode1', 'finishingcode2', 'animfreekickstartposcode',
               'animpenaltieskickstylecode', 'animpenaltiesmotionstylecode', 'animpenaltiesstartposcode', 'gkkickstyle',
               'gksavetype', 'faceposercode')

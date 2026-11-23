@@ -449,6 +449,7 @@ def player_detail(pid: int):
         'traits': fifa14.traits_of(row),
         'all_traits': list(fifa14.TRAITS),
         'accessories': {col: row[col] for col in fifa14.ACCESSORIES if col in row},
+        'accessory_places': fifa14.accessories_by_place(row),
         'animations': {col: row[col] for col in fifa14.ANIMATIONS if col in row},
         'career': {'contract_until': row.get('contractvaliduntil'), 'joined': fifa14.to_date(row.get('playerjointeamdate')),
                    'retiring': row.get('isretiring')},

@@ -264,6 +264,8 @@ export interface PlayerDetail extends PlayerRow {
   traits: string[]
   all_traits: string[]
   accessories: Record<string, number>
+  /** the accessory slots by place of the body, as the game's screen shows them */
+  accessory_places: AccessoryPlaces
   animations: Record<string, number>
   career: { contract_until: number | null; joined: string | null; retiring: number | null }
   photo_where: string | null
@@ -347,4 +349,21 @@ export interface ExportFile {
   name: string
   size: number
   modified: string
+}
+
+export interface AccessoryPlace {
+  place: string
+  code: number
+  colour: number
+  /** the place holds one thing only (yes / no) */
+  single: boolean
+  /** colour: a named colour; model: the glove model; none: no colour (nothing, or drawn from its own picture) */
+  colour_kind: 'colour' | 'model' | 'none'
+}
+
+export interface AccessoryPlaces {
+  places: AccessoryPlace[]
+  used: number
+  slots: number
+  others: number
 }

@@ -119,3 +119,14 @@ def test_not_a_game_folder(tmp_path):
 def test_zlib_is_raw_deflate():
     comp = zlib.compressobj(9, zlib.DEFLATED, -15)
     assert zlib.decompress(comp.compress(b'x') + comp.flush(), -15) == b'x'
+
+
+def test_accessories_by_place():
+    row = {'accessorycode1': 8, 'accessorycolourcode1': 10, 'accessorycode2': 7, 'accessorycolourcode2': 8,
+           'accessorycode3': 4, 'accessorycolourcode3': 0, 'accessorycode4': 20, 'accessorycolourcode4': 3}
+    view = fifa14.accessories_by_place(row)
+    places = {p['place']: p for p in view['places']}
+    assert places['wrist_left'] == {'place': 'wrist_left', 'code': 8, 'colour': 10, 'single': False, 'colour_kind': 'colour'}
+    assert places['wrist_right']['code'] == 7 and places['ankle_left']['code'] == 0  # the first slot of a place wins
+    assert view['used'] == 4 and view['others'] == 1  # 20 has no known place
+    assert fifa14.accessories_by_place({})['used'] == 0

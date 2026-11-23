@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/api/client'
-import type { PlayerDetail } from '@/api/types'
+import type { AccessoryPlace, AccessoryPlaces, PlayerDetail } from '@/api/types'
 import { Badge, BasketButton, BasketCheck, Facts, OverallBadge, Rating, RawTable, Section } from '@/components/common/detail'
 import { Flag, Photo } from '@/components/common/pictures'
 import { Preview3D } from '@/components/common/Preview3D'
@@ -106,7 +106,7 @@ export function PlayerPage() {
         </TabsContent>
         <TabsContent value="accessories">
           <div className="space-y-4">
-            <CodeGroup title={t('fieldGroup.accessories')} codes={data.accessories} />
+            <Accessories view={data.accessory_places} />
             <CodeGroup title={t('fieldGroup.animations')} codes={data.animations} />
           </div>
         </TabsContent>
@@ -242,7 +242,45 @@ function Traits({ data }: { data: PlayerDetail }) {
   )
 }
 
-/** The codes of one group (accessories, animations), read-only, laid out as the FIFA 14 Studio's. */
+/** The accessories by place of the body, read-only, laid out as the FIFA 14 Studio's Accessories tab. */
+function Accessories({ view }: { view: AccessoryPlaces }) {
+  const { t } = useI18n()
+  const box = 'rounded-md border px-2 py-1.5 text-center text-sm whitespace-nowrap truncate'
+  const codeLabel = (p: AccessoryPlace) => {
+    if (!p.code) return t(p.single ? 'accessories.no' : 'accessories.nothing')
+    if (p.single) return t('accessories.yes')
+    const k = `accessories.code.${p.code}`
+    return hasMessage(k) ? t(k as MessageKey) : String(p.code)
+  }
+  const colourLabel = (p: AccessoryPlace) => {
+    if (p.colour_kind === 'model') return t('accessories.model', { value: p.colour })
+    const k = `accessories.colour.${p.colour}`
+    return hasMessage(k) ? t(k as MessageKey) : String(p.colour)
+  }
+  return (
+    <Section title={t('fieldGroup.accessories')} description={t('accessories.hint', { count: view.slots })}>
+      <p className="mb-4 text-sm text-muted-foreground">
+        {t('accessories.used', { used: view.used, count: view.slots })}
+        {view.others > 0 && ` ${t('accessories.others', { count: view.others })}`}
+      </p>
+      <div className="grid gap-x-8 gap-y-5 sm:grid-cols-2 xl:grid-cols-3">
+        {view.places.map((p) => (
+          <div key={p.place} className="grid gap-1.5">
+            <p className="text-sm font-medium">{t(`accessories.place.${p.place}` as MessageKey)}</p>
+            <div className={cn(box, !p.code && 'text-muted-foreground')}>{codeLabel(p)}</div>
+            {p.colour_kind === 'none' ? (
+              <div className="flex h-9 items-center justify-center text-sm text-muted-foreground">{p.code ? t('accessories.ownPicture') : '—'}</div>
+            ) : (
+              <div className={box}>{colourLabel(p)}</div>
+            )}
+          </div>
+        ))}
+      </div>
+    </Section>
+  )
+}
+
+/** The codes of one group (animations), read-only, laid out as the FIFA 14 Studio's. */
 function CodeGroup({ title, codes }: { title: string; codes: Record<string, number> }) {
   const { t } = useI18n()
   return (
