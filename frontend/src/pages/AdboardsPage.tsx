@@ -2,6 +2,7 @@ import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/compon
 import { api } from '@/api/client'
 import type { AdboardRow } from '@/api/types'
 import { Badge, BasketCheck } from '@/components/common/detail'
+import { AdboardImage } from '@/components/common/pictures'
 import { useI18n } from '@/i18n'
 import { usePageLabel } from '@/lib/back'
 import { FilterBar, FilterSelect, LIST_PAGE, Pager, ScrollTable, SearchInput, SortHead, useListState } from '@/lib/list'
@@ -54,7 +55,7 @@ export function AdboardsPage() {
             <TableHead className="w-10" />
             <TableHead className="w-12" />
             <SortHead field="id" label={t('adboards.file')} state={sortState} />
-            <SortHead field="kind" label={t('adboards.kind')} state={sortState} />
+            <SortHead field="kind" label={t('adboards.kind')} state={sortState} className="text-center" />
             <TableHead>{t('adboards.what')}</TableHead>
           </TableRow>
         </TableHeader>
@@ -69,14 +70,12 @@ export function AdboardsPage() {
                 />
               </TableCell>
               <TableCell>
-                <a href={`/api/image/adboard/${b.id}`} target="_blank" rel="noreferrer" title={t('adboards.open')}>
-                  <img src={`/api/image/adboard/${b.id}?size=64`} alt="" loading="lazy" className="aspect-[1/2] w-5 rounded border object-cover" />
-                </a>
+                <AdboardImage name={b.id} size={64} className="aspect-[1/2] w-5 rounded border object-cover" />
               </TableCell>
               <TableCell data-grow className="font-medium">
                 {b.id}
               </TableCell>
-              <TableCell>
+              <TableCell className="text-center">
                 <Badge>{b.kind === 'game' ? t('adboards.kindGame') : t('adboards.kindSpecific')}</Badge>
               </TableCell>
               <TableCell className="text-muted-foreground">{what(b)}</TableCell>

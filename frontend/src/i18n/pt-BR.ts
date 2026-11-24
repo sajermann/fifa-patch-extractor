@@ -23,7 +23,6 @@ export const ptBR = {
   'adboards.kind': 'Tipo',
   'adboards.file': 'Arquivo',
   'adboards.what': 'O que é',
-  'adboards.open': 'Abrir a imagem inteira',
   'adboards.any': 'qualquer',
   'adboards.gameBoard': 'placa número {number} do jogo (o jogo escolhe pela competição)',
   'adboards.team': 'time: {team}',

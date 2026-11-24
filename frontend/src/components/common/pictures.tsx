@@ -203,6 +203,26 @@ export function StadiumImage({
   );
 }
 
+/** An advertising board file (`name` = its file name): its 512x1024 picture, 16 bands. */
+export function AdboardImage({
+  name,
+  size,
+  className,
+}: {
+  name: string;
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <GameImage
+      url={`/api/image/adboard/${encodeURIComponent(name)}${size ? `?size=${size}` : ""}`}
+      alt=""
+      className={className}
+      fallback={<ImageOff className="size-1/2" />}
+    />
+  );
+}
+
 export function KitImage({
   team,
   type,

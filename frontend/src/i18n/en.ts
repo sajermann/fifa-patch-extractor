@@ -25,7 +25,6 @@ export const en: Record<MessageKey, string> = {
   'adboards.kind': 'Kind',
   'adboards.file': 'File',
   'adboards.what': 'What it is',
-  'adboards.open': 'Open the whole picture',
   'adboards.any': 'any',
   'adboards.gameBoard': 'the game’s board number {number} (the game picks it by competition)',
   'adboards.team': 'team: {team}',
