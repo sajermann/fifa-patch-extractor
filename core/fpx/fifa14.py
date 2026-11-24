@@ -58,6 +58,10 @@ STADIUM_PICTURES = {'large': re.compile(r'data/ui/artassets/stadiumsbig/st_(\d+)
                     'small': re.compile(r'data/ui/artassets/stadium/stadium_(\d+)_(\d+)\.big$')}
 # times of day and weather a stadium allows: four slots (timeofday1..4 + tod1weather..4); time 1 = day, 3 = night,
 # 5 = empty slot; weather is two flags (1 = rain, 2 = snow; 0 = clear sky only, e.g. stadiums with a roof)
+ADBOARD_FOLDER = 'data/sceneassets/adboard/'
+ADBOARD_FILE = re.compile(r'data/sceneassets/adboard/specificadboard_(\d+)_(\d+)_(\d+)_(\d+)\.rx3$')
+ADBOARD_GAME_FILE = re.compile(r'data/sceneassets/adboard/adboard_(\d+)_(\d+)\.rx3$')
+TEAM_ASSIGNMENT = 'data/fifarna/lua/assignments/teams/team_{}.lua'
 STADIUM_SLOTS = 4
 STADIUM_NO_TIME = 5
 WEATHER_RAIN, WEATHER_SNOW = 1, 2
@@ -437,6 +441,52 @@ class Fifa14Source:
                 if m:
                     found.setdefault(int(m.group(1)), {})[int(m.group(2))] = path
         return out
+
+    # ---- advertising boards ---------------------------------------------------------------------------------------
+
+    @cached_property
+    def _adboards(self) -> list[dict]:
+        """Every board file of a patch's stadium script: specificadboard_<team>_<tournament>_<stadium>_<variant>.rx3
+        (0 = any; the clean game has none: it picks its boards from a table of its executable)."""
+        out = []
+        for path in self.files.list(ADBOARD_FOLDER):
+            m = ADBOARD_FILE.match(path)
+            if m:
+                team, tournament, stadium, variant = (int(g) for g in m.groups())
+                out.append({'team': team, 'tournament': tournament, 'stadium': stadium, 'variant': variant,
+                            'path': path})
+        return sorted(out, key=lambda b: (b['team'], b['tournament'], b['stadium'], b['variant']))
+
+    @cached_property
+    def all_adboards(self) -> dict[str, dict]:
+        """Every board file the game reads by a known name, by file name (without .rx3): the game's own boards
+        (adboard_<number>_<group>: kind 'game') and the ones a patch's stadium script names
+        (specificadboard_<team>_<tournament>_<stadium>_<variant>: kind 'specific'). Stray copies are left out."""
+        out = {}
+        for path in self.files.list(ADBOARD_FOLDER):
+            name = path.rsplit('/', 1)[1][:-4]
+            if m := ADBOARD_GAME_FILE.match(path):
+                out[name] = {'name': name, 'path': path, 'kind': 'game', 'number': int(m.group(1)),
+                             'group': int(m.group(2))}
+            elif m := ADBOARD_FILE.match(path):
+                team, tournament, stadium, variant = (int(g) for g in m.groups())
+                out[name] = {'name': name, 'path': path, 'kind': 'specific', 'team': team, 'tournament': tournament,
+                             'stadium': stadium, 'variant': variant}
+        return dict(sorted(out.items()))
+
+    def team_adboards(self, tid: int) -> list[dict]:
+        """The board files named after the team: {tournament, stadium, variant, path} (0 = any)."""
+        return [b for b in self._adboards if b['team'] == tid]
+
+    def league_adboards(self, lid: int) -> list[dict]:
+        """The board files of a tournament id equal to the league's, for any team: {stadium, variant, path}."""
+        return [b for b in self._adboards if b['team'] == 0 and b['tournament'] == lid]
+
+    def team_tournament(self, tid: int) -> int | None:
+        """The tournament a patch's script gives the team (assignTeamTournament in its assignment file), or None."""
+        data = self.files.read(TEAM_ASSIGNMENT.format(tid))
+        m = re.search(rb'assignTeamTournament\(\s*' + str(tid).encode() + rb'\s*,\s*(-?\d+)\s*\)', data or b'')
+        return int(m.group(1)) if m else None
 
     def stadium_files(self, sid: int) -> list[str]:
         """Game paths of the stadium's scene: models, textures and crowd placement (not the menu pictures)."""

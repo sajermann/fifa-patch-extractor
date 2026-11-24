@@ -334,7 +334,23 @@ def build(root):
             f.write(blob)
     for variant, color in ((1, (0, 120, 0, 255)), (3, (0, 0, 40, 255))):
         write_big(os.path.join(art, 'stadiumsbig', f'st_{STADIUM}_{variant}.big'), apt_picture(color))
+    # a patch's boards (stadium script of the patch): TEAM in LEAGUE, TEAM anywhere (variant 1), LEAGUE for any team
+    for game_path, blob in ADBOARD_FILES.items():
+        path = os.path.join(root, 'Game', *game_path.split('/'))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, 'wb') as f:
+            f.write(blob)
     return root
+
+
+ADBOARD_FILES = {
+    f'data/sceneassets/adboard/specificadboard_{TEAM}_{LEAGUE}_0_0.rx3': kit_rx3((200, 0, 0)),
+    f'data/sceneassets/adboard/specificadboard_{TEAM}_0_0_1.rx3': kit_rx3((0, 0, 200)),
+    f'data/sceneassets/adboard/specificadboard_0_{LEAGUE}_0_0.rx3': kit_rx3((0, 200, 0)),
+    'data/sceneassets/adboard/specificadboard_0_7_0_0 - copy.rx3': kit_rx3((1, 1, 1)),  # a stray copy: not read
+    'data/sceneassets/adboard/adboard_3_0.rx3': kit_rx3((120, 120, 0)),  # a board of the game
+    f'data/fifarna/lua/assignments/teams/team_{TEAM}.lua': f'--Test\r\nassignTeamTournament({TEAM},{LEAGUE})\r\n'.encode(),
+}
 
 
 def _dds_bytes(size, color):

@@ -9,7 +9,7 @@ import type {
   NationDetail,
   NationRow,
   StadiumDetail,
-  StadiumRow,
+  StadiumRow, AdboardRow,
   LeagueRow,
   Options,
   Page,
@@ -83,6 +83,7 @@ export const api = {
     post<{ path: string | null }>('/api/dialog/folder', { initial, title }),
 
   stadiums: (p: ListParams) => get<Page<StadiumRow>>(`/api/stadiums${query(p)}`),
+  adboards: (p: ListParams) => get<Page<AdboardRow>>(`/api/adboards${query(p)}`),
   nations: (p: ListParams) => get<Page<NationRow>>(`/api/nations${query(p)}`),
   leagues: (p: ListParams) => get<Page<LeagueRow>>(`/api/leagues${query(p)}`),
   teams: (p: ListParams) => get<Page<TeamRow>>(`/api/teams${query(p)}`),

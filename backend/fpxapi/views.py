@@ -35,6 +35,7 @@ class Index:
         self.teams = {tid: self._team(tid) for tid in src.teams}
         self.players = {pid: self._player(pid) for pid in src.players}
         self.stadiums = {sid: self._stadium_row(sid) for sid in src.stadiums}
+        self.adboards = {name: self._adboard_row(b) for name, b in src.all_adboards.items()}
         self._search = {
             'nations': {i: fold(' '.join([str(i), *self.src.nation_all_names(i).values()])) for i in self.nations},
             'leagues': {i: fold(' '.join([str(i), *self.src.league_all_names(i).values()])) for i in self.leagues},
@@ -43,6 +44,7 @@ class Index:
             'stadiums': {i: fold(' '.join([str(i), *self.src.stadium_all_names(i).values(),
                                            *(self.src.stadium_custom_names.get(t, '') for t in
                                              self.src.stadium_teams.get(i, []))])) for i in self.stadiums},
+            'adboards': {i: fold(' '.join(str(v) for v in r.values() if v is not None)) for i, r in self.adboards.items()},
         }
 
     # ---- summaries ----------------------------------------------------------------------------------------------
@@ -168,6 +170,19 @@ class Index:
             'has_photo': self.src.photo_path(pid) is not None,
         }
 
+    def _adboard_row(self, b: dict) -> dict:
+        """A board file of the list: a board of the game (its number) or one a patch's script names (team,
+        tournament, stadium, variant; 0 = any). The tournament is named when a league has that id."""
+        if b['kind'] == 'game':
+            return {'id': b['name'], 'kind': 'game', 'number': b['number'], 'group': b['group'], 'team_id': None,
+                    'team': None, 'tournament': None, 'league': None, 'stadium': None, 'variant': None}
+        team, tournament = b['team'] or None, b['tournament'] or None
+        return {'id': b['name'], 'kind': 'specific', 'number': None, 'group': None, 'team_id': team,
+                'team': self.src.team_display_name(team) if team in self.src.teams else None,
+                'tournament': tournament,
+                'league': self.src.league_display_name(tournament) if tournament in self.src.leagues else None,
+                'stadium': b['stadium'] or None, 'variant': b['variant']}
+
     # ---- lists --------------------------------------------------------------------------------------------------
 
     def search(self, kind: str, ids, q: str):
@@ -180,6 +195,7 @@ class Index:
 
 
 SORTS = {
+    'adboards': {'id', 'kind', 'team', 'league', 'tournament'},
     'stadiums': {'name', 'id', 'capacity', 'country', 'team_count'},
     'nations': {'name', 'id', 'confederation', 'league_count', 'player_count'},
     'leagues': {'name', 'id', 'level', 'country', 'team_count'},
@@ -187,7 +203,7 @@ SORTS = {
     'players': {'name', 'id', 'overall', 'potential', 'age', 'birthdate', 'position_code', 'nationality', 'team',
                 'height'},
 }
-DEFAULT_SORT = {'stadiums': ('name', 'asc'), 'nations': ('name', 'asc'), 'leagues': ('name', 'asc'), 'teams': ('name', 'asc'), 'players': ('overall', 'desc')}
+DEFAULT_SORT = {'adboards': ('id', 'asc'), 'stadiums': ('name', 'asc'), 'nations': ('name', 'asc'), 'leagues': ('name', 'asc'), 'teams': ('name', 'asc'), 'players': ('overall', 'desc')}
 
 
 def page(rows: list[dict], kind: str, sort: str | None, direction: str | None, page_no: int, size: int) -> dict:
@@ -196,7 +212,7 @@ def page(rows: list[dict], kind: str, sort: str | None, direction: str | None, p
     if sort in SORTS[kind]:
         key = sort
         default_dir = 'asc' if key in ('name', 'country', 'league', 'nationality', 'team', 'position_code',
-                                       'birthdate') else 'desc'
+                                       'birthdate') or kind == 'adboards' else 'desc'
     desc = (direction or default_dir) == 'desc'
     present = [r for r in rows if r.get(key) is not None]
     missing = [r for r in rows if r.get(key) is None]

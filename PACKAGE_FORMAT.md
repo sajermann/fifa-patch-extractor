@@ -9,11 +9,14 @@ imports a package decides how to use each value (convert codes, clean names, res
 ```
 package.json                       the manifest (below)
 leagues/<id>/logo.png, banner.png  league pictures, decoded
+leagues/<id>/adboards/<stadium>_<variant>.png             advertising boards of the league, decoded
 teams/<id>/crest.png               crest, decoded (crest-no-background.png when asked)
 teams/<id>/kits/<type>/jersey.png  kit textures, decoded (shorts.png beside it)
+teams/<id>/adboards/<tournament>_<stadium>_<variant>.png  advertising boards of the team, decoded
 players/<id>/photo.png             player photo, decoded
 nations/<id>/flag.png              flag, decoded
 stadiums/<id>/picture-<n>.png      stadium picture of the menus, decoded (n = the game's picture variant)
+adboards/<file name>.png           advertising board picked on its own, decoded
 game/<game path>                   files as the game reads them (chunked containers already unpacked):
                                    always the fonts, face and stadium scene files; the original pictures,
                                    kits and the other flag files too when "includes_originals" is true
@@ -38,8 +41,10 @@ game/<game path>                   files as the game reads them (chunked contain
   "created_at": "2026-01-01T12:00:00+00:00",
   "includes_originals": true,
   "includes_stadiums": true,           // the stadiums of the exported teams went too
+  "includes_adboards": true,           // the boards of the exported teams and leagues went too
   "credits": { "text": "…", "url": "https://…" } | null,
-  "leagues": [League], "teams": [Team], "players": [Player], "nations": [Nation], "stadiums": [Stadium]
+  "leagues": [League], "teams": [Team], "players": [Player], "nations": [Nation], "stadiums": [Stadium],
+  "adboards": [Adboard]
 }
 ```
 
@@ -54,6 +59,7 @@ values as stored (integers already include the field's range offset, as the game
 | `level`, `country_nation_id` | from the `leagues` row |
 | `team_ids` | every team of the league in the source (not only the exported ones) |
 | `images` | `{logo, banner}` → `{image, source_path, original?}` |
+| `adboards[]` | `{image, source_path, original?, stadium, variant}`: the board files a patch's stadium script names after a tournament id equal to the league's id, for any team (`specificadboard_0_<league>_<stadium>_<variant>.rx3`; `stadium` null = any). Empty in the clean game (it picks its boards from a table of its executable) |
 | `raw` | rows with this `leagueid` (`leagues`, `leagueteamlinks`, ...) |
 
 ### Team
@@ -68,6 +74,8 @@ values as stored (integers already include the field's range offset, as the game
 | `kits[]` | `type` (kit type id), `role` (`home`, `away`, `goalkeeper` or null), `jersey`, `shorts`, `source_path`, `original?`, `print_positions` (8 rectangles `[u0, v0, u1, v1]`: crest, back number, front number, name, name arc center, name arc tangent, shorts crest, shorts number), `colors`, `name_color`, `name_font {id, file?, family_name?}`, `name_layout`, `name_case`, `back_name_placement`, `number_font {id, color, file?, ink_color?}`, `front_number_placement`, `shorts_number_font {…}`, `shorts_number_placement`, `collar` |
 | `roster[]` | the exported players: `player_id`, `jersey_number`, `position` (the game's code, 28 = substitute, 29 = reserve), `position_name` |
 | `formation` | `{id, name, base, positions[]}`: the team's `formations` row (base = which of the game's generic formations; each position `{code, name, x, y}`, 0-1 with the own goal at y 0), or null |
+| `adboards[]` | `{image, source_path, original?, tournament, stadium, variant}`: the board files a patch's stadium script names after the team (`specificadboard_<team>_<tournament>_<stadium>_<variant>.rx3`; `tournament` / `stadium` null = any). Empty in the clean game |
+| `adboard_tournament_id` | the tournament the patch's script gives the team (`assignTeamTournament` in `data/fifarna/lua/assignments/teams/team_<id>.lua`), or null. Its meaning is the patch's (a league id, an era…) |
 | `stadium_ids`, `stadium_custom_name` | stadiums of the team in the source (`teamstadiumlinks`) and the name it gives its stadium (`stadiumassignments`), or null |
 | `captain_id`, `takers` | ids as in the database (`penalty`, `free_kick`, `long_free_kick`, `left_corner`, `right_corner`); they may point to players that are not in the package |
 | `raw` | rows with this `teamid` (only the exported `teamplayerlinks`) + every `teamkits` row of the team |
@@ -118,6 +126,20 @@ The stadiums of the exported teams (when the export asked for them; a stadium sh
 | `pictures[]` | `{variant, image, source_path, original?}`: the menu pictures, cut to the part the screen draws |
 | `files` | `{game path: zip path}` of the scene: model, textures, the variants some patches add per home team (`specificstadium_*`), crowd placement |
 | `raw` | rows with this `stadiumid` (`stadiums`, `teamstadiumlinks`, `audiostadium`; not fixtures or saves) |
+
+### Adboard
+
+The board files picked on their own (the ones of the exported teams and leagues are in their `adboards`, when
+`includes_adboards`).
+
+| field | meaning |
+|---|---|
+| `name` | the file name without `.rx3` (the id of the board in the source) |
+| `kind` | `game`: one of the game's own boards, `adboard_<number>_<group>.rx3` (`number`, `group`; the game picks it by competition from a table of its executable). `specific`: a file a patch's stadium script names, `specificadboard_<team>_<tournament>_<stadium>_<variant>.rx3` (`team`, `tournament`, `stadium`, `variant`; 0 = any) |
+| `image`, `source_path`, `original?` | the picture decoded, where it was read and the file as the game reads it |
+
+A board picture is 512x1024 in the game: 16 bands of 512x64, one ad per band (top to bottom). Teams' and leagues'
+`adboards` are left empty when `includes_adboards` is false.
 
 ## Versions
 

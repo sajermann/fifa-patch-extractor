@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from . import settings  # noqa: I001 - first: it puts the core folder on the path
 
-from fpx import fifa14, images, kitfonts, kitprint, package, preview, stadium3d  # noqa: E402
+from fpx import fifa14, images, kitfonts, kitprint, package, preview, rx3, stadium3d  # noqa: E402
 
 from . import dialogs, views  # noqa: E402
 from .state import Basket, Exports, Selections, SourceHolder
@@ -117,11 +117,11 @@ def forget_recent(path: str):
 def basket_counts() -> dict:
     d = basket.data
     return {'nations': len(d['nations']), 'leagues': len(d['leagues']), 'teams': len(d['teams']),
-            'players': len(basket.player_ids()), 'stadiums': len(d['stadiums'])}
+            'players': len(basket.player_ids()), 'stadiums': len(d['stadiums']), 'adboards': len(d['adboards'])}
 
 
 def _with_basket(kind: str, rows: list[dict]) -> list[dict]:
-    if kind in ('nations', 'stadiums'):
+    if kind in ('nations', 'stadiums', 'adboards'):
         inside = set(basket.data[kind])
         return [{**r, 'in_basket': r['id'] in inside} for r in rows]
     if kind == 'leagues':
@@ -143,7 +143,7 @@ def _basket_filter(kind: str, rows: list[dict], value: Optional[str]):
     want = _yes_no(value)
     if want is None:
         return rows
-    if kind in ('nations', 'stadiums'):
+    if kind in ('nations', 'stadiums', 'adboards'):
         inside = set(basket.data[kind])
     elif kind == 'leagues':
         inside = set(basket.data['leagues'])
@@ -183,6 +183,20 @@ def list_stadiums(q: str = '', country: Optional[int] = None, home: Optional[str
     rows = _basket_filter('stadiums', rows, in_basket)
     out = views.page(rows, 'stadiums', sort, dir, page, size)
     out['items'] = _with_basket('stadiums', out['items'])
+    return out
+
+
+@app.get('/api/adboards')
+def list_adboards(q: str = '', kind: Optional[str] = None, in_basket: Optional[str] = None, sort: Optional[str] = None,
+                  dir: Optional[str] = None, page: int = 1, size: int = views.DEFAULT_PAGE_SIZE):
+    """The board files of the game: its own boards and the ones a patch's stadium script names."""
+    _, idx = ready()
+    rows = [idx.adboards[i] for i in idx.search('adboards', list(idx.adboards), q)]
+    if kind in ('game', 'specific'):
+        rows = [r for r in rows if r['kind'] == kind]
+    rows = _basket_filter('adboards', rows, in_basket)
+    out = views.page(rows, 'adboards', sort, dir, page, size)
+    out['items'] = _with_basket('adboards', out['items'])
     return out
 
 
@@ -550,6 +564,27 @@ def flag_image(nid: int, size: Optional[int] = None):
     return _png(('flag', nid, _size(size)), _dds(src.flag_path(nid), _size(size)))
 
 
+@app.get('/api/image/adboard/{name}')
+def adboard_image(name: str, size: Optional[int] = None):
+    """A board file's picture (512x1024 in the game: 16 bands), or `size` pixels wide."""
+    src, _ = ready()
+    found = src.all_adboards.get(name)
+    s = _size(size)
+
+    def make():
+        if not found:
+            return None
+        data = src.files.read(found['path'])
+        textures = rx3.textures(data) if data else []
+        if not textures:
+            return None
+        img = rx3.to_image(data, textures[0])
+        if s:
+            img = img.resize((s, round(s * img.height / img.width)))
+        return images.png(img)
+    return _png(('adboard', name, s), make)
+
+
 @app.get('/api/image/stadium/{sid}/{variant}')
 def stadium_image(sid: int, variant: int, size: Optional[int] = None):
     src, _ = ready()
@@ -700,7 +735,7 @@ class BasketOp(BaseModel):
     args: dict[str, Any] = {}
 
 
-BASKET_OPS = {'add_stadium', 'remove_stadium', 'add_nation', 'remove_nation', 'add_league', 'remove_league', 'add_team', 'remove_team', 'set_team', 'pick', 'add_players',
+BASKET_OPS = {'add_adboard', 'remove_adboard', 'add_stadium', 'remove_stadium', 'add_nation', 'remove_nation', 'add_league', 'remove_league', 'add_team', 'remove_team', 'set_team', 'pick', 'add_players',
               'remove_players', 'clear', 'set_form'}
 
 
@@ -734,7 +769,9 @@ def basket_view():
                       'crest_no_background': v['crest_no_background']})
     players = [{'id': i, 'name': name(idx.players, i) if idx else None} for i in d['players']]
     stadiums = [{'id': i, 'name': name(idx.stadiums, i) if idx else None} for i in d['stadiums']]
-    return {'nations': nations, 'leagues': leagues, 'teams': teams, 'stadiums': stadiums, 'players': players, 'form': d['form'], 'counts': basket_counts()}
+    adboards = [{'id': i, 'name': i if idx and i in idx.adboards else None} for i in d['adboards']]
+    return {'nations': nations, 'leagues': leagues, 'teams': teams, 'stadiums': stadiums, 'players': players,
+            'adboards': adboards, 'form': d['form'], 'counts': basket_counts()}
 
 
 # ---- saved selections ---------------------------------------------------------------------------------------------
@@ -788,7 +825,8 @@ def start_export():
     src, _ = ready()
     form = basket.data['form']
     selection = basket.selection()
-    if not (selection.nations or selection.leagues or selection.teams or selection.players or selection.stadiums):
+    if not (selection.nations or selection.leagues or selection.teams or selection.players or selection.stadiums
+            or selection.adboards):
         raise ApiError(400, 'basket_empty')
     if form.get('credits_url') and not package.normalize_link(form['credits_url']):
         raise ApiError(400, 'invalid_link')
@@ -796,6 +834,7 @@ def start_export():
                               credits_url=form.get('credits_url', ''),
                               include_originals=bool(form.get('include_originals', True)),
                               include_stadiums=bool(form.get('include_stadiums', True)),
+                              include_adboards=bool(form.get('include_adboards', True)),
                               tool_version=settings.APP_VERSION)
     folder = settings.load().exports_dir()
     try:

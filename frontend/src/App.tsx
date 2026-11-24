@@ -16,6 +16,7 @@ import { PlayerPage } from '@/pages/PlayerPage'
 import { PlayersPage } from '@/pages/PlayersPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { StadiumPage } from '@/pages/StadiumPage'
+import { AdboardsPage } from '@/pages/AdboardsPage'
 import { StadiumsPage } from '@/pages/StadiumsPage'
 import { SourcePage } from '@/pages/SourcePage'
 import { TeamPage } from '@/pages/TeamPage'
@@ -68,6 +69,7 @@ export default function App() {
                     <Route path="players" element={<PlayersPage />} />
                     <Route path="players/:id" element={<PlayerPage />} />
                     <Route path="stadiums" element={<StadiumsPage />} />
+                    <Route path="adboards" element={<AdboardsPage />} />
                     <Route path="stadiums/:id" element={<StadiumPage />} />
                   </Route>
                   <Route path="*" element={<Navigate to="/" replace />} />

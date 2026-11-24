@@ -9,7 +9,7 @@ export interface SourceStatus {
   database_from?: string
   language?: string
   languages?: string[]
-  counts?: { leagues: number; teams: number; players: number; nations: number; stadiums: number }
+  counts?: { leagues: number; teams: number; players: number; nations: number; stadiums: number; adboards: number }
   suspect_birthdates?: (string | null)[]
   warnings?: string[]
 }
@@ -25,6 +25,7 @@ export interface Config {
 export interface BasketCounts {
   nations: number
   stadiums: number
+  adboards: number
   leagues: number
   teams: number
   players: number
@@ -59,6 +60,23 @@ export interface NationRow {
   player_count: number
   national_team_id: number | null
   has_flag: boolean
+  in_basket: boolean
+}
+
+/** A board file of the game: one of its own boards (kind game: number, group) or one a patch's stadium script names
+ * (kind specific: team, tournament, stadium, variant; null = any). */
+export interface AdboardRow {
+  id: string
+  kind: 'game' | 'specific'
+  number: number | null
+  group: number | null
+  team_id: number | null
+  team: string | null
+  tournament: number | null
+  /** the league whose id is the tournament's, when there is one */
+  league: string | null
+  stadium: number | null
+  variant: number | null
   in_basket: boolean
 }
 
@@ -308,11 +326,14 @@ export interface BasketForm {
   credits_url: string
   include_originals: boolean
   include_stadiums: boolean
+  include_adboards: boolean
 }
 
 export interface BasketView {
   nations: { id: number; name: string | null }[]
   stadiums: { id: number; name: string | null }[]
+  /** board files picked on their own (file names; name null = the loaded game lacks it) */
+  adboards: { id: string; name: string | null }[]
   leagues: { id: number; name: string | null }[]
   teams: { id: number; name: string | null; players: number; roster: number | null; crest_no_background: boolean }[]
   players: { id: number; name: string | null }[]
@@ -328,6 +349,7 @@ export interface SavedSelection {
   source_path: string | null
   nations?: number
   stadiums?: number
+  adboards?: number
   leagues: number
   teams: number
   players: number
@@ -344,7 +366,7 @@ export interface ExportJob {
     path: string
     size: number
     warnings: string[]
-    counts: { nations: number; leagues: number; teams: number; players: number; stadiums?: number }
+    counts: { nations: number; leagues: number; teams: number; players: number; stadiums?: number; adboards?: number }
   } | null
 }
 

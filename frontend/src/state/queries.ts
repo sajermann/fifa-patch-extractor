@@ -22,7 +22,7 @@ export function useSourceReady() {
   return s?.state === 'ready'
 }
 
-export function useList<T>(kind: 'stadiums' | 'nations' | 'leagues' | 'teams' | 'players', params: ListParams, fetcher: (p: ListParams) => Promise<T>) {
+export function useList<T>(kind: 'adboards' | 'stadiums' | 'nations' | 'leagues' | 'teams' | 'players', params: ListParams, fetcher: (p: ListParams) => Promise<T>) {
   const token = useToken()
   return useQuery({ queryKey: [kind, token, params], queryFn: () => fetcher(params), placeholderData: keepPreviousData, enabled: !!token })
 }
@@ -44,7 +44,7 @@ export function useBasketOp() {
     mutationFn: ({ op, args }: { op: string; args?: Record<string, unknown> }) => api.basketOp(op, args),
     onSuccess: (counts: BasketCounts) => {
       qc.setQueryData(['status'], (s: unknown) => (s && typeof s === 'object' ? { ...s, basket: counts } : s))
-      for (const key of ['stadiums', 'nations', 'leagues', 'teams', 'players', 'stadium', 'nation', 'league', 'team', 'player', 'basket']) void qc.invalidateQueries({ queryKey: [key] })
+      for (const key of ['adboards', 'stadiums', 'nations', 'leagues', 'teams', 'players', 'stadium', 'nation', 'league', 'team', 'player', 'basket']) void qc.invalidateQueries({ queryKey: [key] })
     },
     onError: (e: Error) => toast.error(e.message),
   })

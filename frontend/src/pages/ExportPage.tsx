@@ -24,7 +24,7 @@ export function ExportPage() {
   const basket = useBasketView().data
   const op = useBasketOp()
   const ready = useStatus().data?.source.state === 'ready'
-  const empty = !basket || basket.counts.nations + basket.counts.leagues + basket.counts.teams + basket.counts.players + basket.counts.stadiums === 0
+  const empty = !basket || basket.counts.nations + basket.counts.leagues + basket.counts.teams + basket.counts.players + basket.counts.stadiums + basket.counts.adboards === 0
   return (
     <div className="max-w-5xl space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -62,6 +62,10 @@ export function ExportPage() {
             <p className="mb-2 text-xs text-muted-foreground">{t('export.stadiumsHint')}</p>
             <ItemList items={basket.stadiums} to="stadiums" onRemove={(id) => op.mutate({ op: 'remove_stadium', args: { id } })} />
           </Section>
+          <Section title={t('export.adboardsCount', { count: basket.adboards.length })}>
+            <p className="mb-2 text-xs text-muted-foreground">{t('export.adboardsHint')}</p>
+            <BoardList items={basket.adboards} onRemove={(id) => op.mutate({ op: 'remove_adboard', args: { id } })} />
+          </Section>
         </div>
       )}
       {basket && <ExportForm form={basket.form} disabled={empty || !ready} />}
@@ -81,6 +85,26 @@ function ItemList({ items, to, onRemove }: { items: { id: number; name: string |
             {it.name ?? <span className="text-amber-700 dark:text-amber-300">{t('export.missing', { id: it.id })}</span>}
           </Link>
           {it.extra && <Badge>{it.extra}</Badge>}
+          <Button variant="ghost" size="icon-sm" onClick={() => onRemove(it.id)} aria-label={t('basket.remove')} title={t('basket.remove')}>
+            <X />
+          </Button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** The board files picked on their own (by file name; they have no screen of their own: the link opens the list). */
+function BoardList({ items, onRemove }: { items: { id: string; name: string | null }[]; onRemove: (id: string) => void }) {
+  const { t } = useI18n()
+  if (!items.length) return <p className="text-sm text-muted-foreground">{t('export.none')}</p>
+  return (
+    <ul className="max-h-72 space-y-1 overflow-auto pr-1 text-sm">
+      {items.map((it) => (
+        <li key={it.id} className="flex items-center gap-2">
+          <Link to={`/adboards?q=${encodeURIComponent(it.id)}`} className="min-w-0 flex-1 truncate hover:underline">
+            {it.name ?? <span className="text-amber-700 dark:text-amber-300">{t('export.missingFile', { name: it.id })}</span>}
+          </Link>
           <Button variant="ghost" size="icon-sm" onClick={() => onRemove(it.id)} aria-label={t('basket.remove')} title={t('basket.remove')}>
             <X />
           </Button>
@@ -166,6 +190,20 @@ function ExportForm({ form, disabled }: { form: BasketForm; disabled: boolean })
           <div>
             <Label htmlFor="stadiums">{t('export.includeStadiums')}</Label>
             <p className="text-xs text-muted-foreground">{t('export.includeStadiumsHint')}</p>
+          </div>
+        </div>
+        <div className="flex items-start gap-3">
+          <Checkbox
+            id="adboards"
+            checked={draft.include_adboards}
+            onCheckedChange={(v) => {
+              setDraft({ ...draft, include_adboards: v === true })
+              save({ include_adboards: v === true })
+            }}
+          />
+          <div>
+            <Label htmlFor="adboards">{t('export.includeAdboards')}</Label>
+            <p className="text-xs text-muted-foreground">{t('export.includeAdboardsHint')}</p>
           </div>
         </div>
       </div>
@@ -279,7 +317,7 @@ function SavedSelections() {
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{s.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  {t('selections.counts', { stadiums: s.stadiums ?? 0, nations: s.nations ?? 0, leagues: s.leagues, teams: s.teams, players: s.players })} · {fmtDate(s.updated_at)}
+                  {t('selections.counts', { adboards: s.adboards ?? 0, stadiums: s.stadiums ?? 0, nations: s.nations ?? 0, leagues: s.leagues, teams: s.teams, players: s.players })} · {fmtDate(s.updated_at)}
                 </p>
               </div>
               <Button size="sm" variant="outline" onClick={() => load.mutate(s.id)}>

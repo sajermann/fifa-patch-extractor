@@ -9,7 +9,7 @@ from conftest import wait
 def test_status(client):
     s = client.get('/api/status').json()
     assert s['source']['state'] == 'ready'
-    assert s['source']['counts'] == {'leagues': 2, 'teams': 2, 'players': 21, 'nations': 2, 'stadiums': 1}
+    assert s['source']['counts'] == {'leagues': 2, 'teams': 2, 'players': 21, 'nations': 2, 'stadiums': 1, 'adboards': 4}
     assert s['source']['suspect_birthdates']
 
 
@@ -76,7 +76,7 @@ def test_basket(client):
         r = client.post('/api/basket', json={'op': name, 'args': args})
         assert r.status_code == 200, r.text
         return r.json()
-    assert op('add_league', id=fakegame.LEAGUE) == {'nations': 0, 'leagues': 1, 'teams': 1, 'players': 16, 'stadiums': 0}
+    assert op('add_league', id=fakegame.LEAGUE) == {'nations': 0, 'leagues': 1, 'teams': 1, 'players': 16, 'stadiums': 0, 'adboards': 0}
     assert op('set_team', id=fakegame.TEAM, players=[fakegame.STAR, fakegame.KEEPER])['players'] == 2
     assert op('add_players', ids=[fakegame.SHARED, fakegame.STAR])['players'] == 3  # STAR already inside
     rows = client.get('/api/players', params={'in_basket': 'yes'}).json()['items']
@@ -86,7 +86,7 @@ def test_basket(client):
     assert op('remove_players', ids=[fakegame.STAR])['players'] == 2
     view = client.get('/api/basket').json()
     assert view['teams'][0]['players'] == 1 and view['players'][0]['id'] == fakegame.SHARED
-    assert op('remove_league', id=fakegame.LEAGUE) == {'nations': 0, 'leagues': 0, 'teams': 0, 'players': 1, 'stadiums': 0}
+    assert op('remove_league', id=fakegame.LEAGUE) == {'nations': 0, 'leagues': 0, 'teams': 0, 'players': 1, 'stadiums': 0, 'adboards': 0}
     assert client.post('/api/basket', json={'op': 'nope'}).status_code == 400
 
 
@@ -107,9 +107,9 @@ def test_nations(client):
 
     def op(name, **args):
         return client.post('/api/basket', json={'op': name, 'args': args}).json()
-    assert op('add_nation', id=54) == {'nations': 1, 'leagues': 1, 'teams': 1, 'players': 16, 'stadiums': 0}  # leagues and teams
+    assert op('add_nation', id=54) == {'nations': 1, 'leagues': 1, 'teams': 1, 'players': 16, 'stadiums': 0, 'adboards': 0}  # leagues and teams
     assert client.get('/api/basket').json()['nations'] == [{'id': 54, 'name': 'Republic of Nowhere'}]
-    assert op('remove_nation', id=54) == {'nations': 0, 'leagues': 0, 'teams': 0, 'players': 0, 'stadiums': 0}
+    assert op('remove_nation', id=54) == {'nations': 0, 'leagues': 0, 'teams': 0, 'players': 0, 'stadiums': 0, 'adboards': 0}
 
 
 def test_team_stadium(client):
@@ -208,3 +208,34 @@ def test_export(client):
     assert m['source']['patch_name'] == 'My Patch!' and m['credits']['url'] == 'https://example.com'
     assert client.get('/api/exports/..%2Fconfig.json').status_code == 404
     assert client.delete(f'/api/exports/{result["name"]}').status_code == 200
+
+
+def test_adboards(client):
+    r = client.get('/api/adboards').json()
+    assert [b['id'] for b in r['items']] == ['adboard_3_0', f'specificadboard_0_{fakegame.LEAGUE}_0_0',
+                                             f'specificadboard_{fakegame.TEAM}_0_0_1', f'specificadboard_{fakegame.TEAM}_{fakegame.LEAGUE}_0_0']
+    own = client.get('/api/adboards', params={'kind': 'specific', 'q': 'test athletic'}).json()['items']
+    assert {b['team_id'] for b in own} == {fakegame.TEAM} and len(own) == 2  # searched by the team's name
+    league = next(b for b in r['items'] if b['tournament'] == fakegame.LEAGUE and b['team_id'] is None)
+    assert league['league'] and league['variant'] == 0
+    img = client.get('/api/image/adboard/adboard_3_0', params={'size': 32})
+    assert img.status_code == 200 and img.headers['content-type'] == 'image/png'
+    assert client.get('/api/image/adboard/nope').status_code == 404
+
+    def op(name, **args):
+        return client.post('/api/basket', json={'op': name, 'args': args}).json()
+    assert op('add_adboard', id='adboard_3_0')['adboards'] == 1
+    assert client.get('/api/adboards', params={'in_basket': 'yes'}).json()['total'] == 1
+    assert client.get('/api/basket').json()['adboards'] == [{'id': 'adboard_3_0', 'name': 'adboard_3_0'}]
+    client.post('/api/basket', json={'op': 'set_form', 'args': {'include_adboards': False}})
+    job = client.post('/api/export').json()  # a board alone is enough to export
+    wait(lambda: client.get(f'/api/export/{job["id"]}').json()['state'] != 'running')
+    result = client.get(f'/api/export/{job["id"]}').json()['result']
+    assert result['counts']['adboards'] == 1 and result['counts']['teams'] == 0
+    path = os.path.join(os.environ['FPX_DATA_DIR'], 'exports', result['name'])
+    with zipfile.ZipFile(path) as z:
+        m = json.loads(z.read('package.json'))
+    assert m['includes_adboards'] is False and m['adboards'][0]['name'] == 'adboard_3_0'
+    client.delete(f'/api/exports/{result["name"]}')
+    client.post('/api/basket', json={'op': 'set_form', 'args': {'include_adboards': True}})
+    assert op('remove_adboard', id='adboard_3_0')['adboards'] == 0

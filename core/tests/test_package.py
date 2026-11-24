@@ -208,3 +208,37 @@ def test_normalize_link():
     assert package.normalize_link('javascript:alert(1)') is None
     assert package.normalize_link('ftp://a.com') is None
     assert package.normalize_link('') is None
+
+
+def test_adboards_of_a_patch(src):
+    """The board files of a patch's stadium script, by team and by league, as the source names them."""
+    pkg = package.build(src, Selection(leagues=[fakegame.LEAGUE, fakegame.PLAIN_LEAGUE],
+                                       teams={fakegame.TEAM: TeamPick([]), fakegame.SMALL_TEAM: TeamPick([])}))
+    league = {lg['source_id']: lg for lg in pkg.manifest['leagues']}
+    teams = {tm['source_id']: tm for tm in pkg.manifest['teams']}
+    team = teams[fakegame.TEAM]
+    assert team['adboard_tournament_id'] == fakegame.LEAGUE
+    assert [(b['tournament'], b['stadium'], b['variant']) for b in team['adboards']] == [(None, None, 1), (fakegame.LEAGUE, None, 0)]
+    board = team['adboards'][1]
+    assert board['source_path'] == f'data/sceneassets/adboard/specificadboard_{fakegame.TEAM}_{fakegame.LEAGUE}_0_0.rx3'
+    assert board['image'] == f'teams/{fakegame.TEAM}/adboards/{fakegame.LEAGUE}_0_0.png' and board['original'] in pkg.files
+    assert Image.open(io.BytesIO(pkg.files[board['image']])).convert('RGB').getpixel((1, 1)) == (200, 0, 0)
+    assert [(b['stadium'], b['variant']) for b in league[fakegame.LEAGUE]['adboards']] == [(None, 0)]
+    assert league[fakegame.PLAIN_LEAGUE]['adboards'] == [] and teams[fakegame.SMALL_TEAM]['adboards'] == []
+    assert teams[fakegame.SMALL_TEAM]['adboard_tournament_id'] is None
+    assert not [w for w in pkg.warnings if 'adboard' in w]  # (SMALL_TEAM's own broken files warn, by design)
+
+
+def test_adboards_on_their_own_and_without_them(src):
+    assert list(src.all_adboards) == ['adboard_3_0', f'specificadboard_0_{fakegame.LEAGUE}_0_0',
+                                      f'specificadboard_{fakegame.TEAM}_0_0_1', f'specificadboard_{fakegame.TEAM}_{fakegame.LEAGUE}_0_0']
+    pkg = package.build(src, Selection(teams={fakegame.TEAM: TeamPick([])},
+                                       adboards=['adboard_3_0', f'specificadboard_{fakegame.TEAM}_0_0_1', 'nope']),
+                        Options(include_adboards=False, include_originals=False))
+    m = pkg.manifest
+    assert m['includes_adboards'] is False and m['teams'][0]['adboards'] == []  # the team's ones stay out
+    game, own = m['adboards']
+    assert (game['name'], game['kind'], game['number'], game['group']) == ('adboard_3_0', 'game', 3, 0)
+    assert (own['kind'], own['team'], own['tournament'], own['variant']) == ('specific', fakegame.TEAM, 0, 1)
+    assert game['image'] == 'adboards/adboard_3_0.png' and game['image'] in pkg.files and 'original' not in game
+    assert 'adboard nope: not in the game' in pkg.warnings

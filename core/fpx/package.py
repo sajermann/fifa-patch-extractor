@@ -35,6 +35,7 @@ class Selection:
     teams: dict[int, TeamPick] = field(default_factory=dict)
     players: list[int] = field(default_factory=list)  # players that go without a team
     stadiums: list[int] = field(default_factory=list)  # stadiums picked on their own (go even without include_stadiums)
+    adboards: list[str] = field(default_factory=list)  # board files picked on their own (file names, see all_adboards)
 
     def player_ids(self) -> list[int]:
         out = dict.fromkeys(self.players)
@@ -50,6 +51,7 @@ class Options:
     credits_url: str = ''
     include_originals: bool = True
     include_stadiums: bool = True  # the stadium of every exported team, with its scene files (large)
+    include_adboards: bool = True  # the board files of every exported team and league
     tool_name: str = 'fifa-patch-extractor'
     tool_version: str = '0.0.0'
 
@@ -86,6 +88,14 @@ def normalize_link(url) -> str | None:
 def _rgb(row: dict, r: str, g: str, b: str):
     values = [row.get(r), row.get(g), row.get(b)]
     return values if all(isinstance(v, int) for v in values) else None
+
+
+def _board_picture(data: bytes):
+    """The texture of a board file (512x1024 in the game: 16 bands of 512x64)."""
+    found = rx3.textures(data)
+    if not found:
+        raise ValueError('no texture')
+    return rx3.to_image(data, found[0])
 
 
 def _id(value):
@@ -144,6 +154,28 @@ class _Builder:
             out['original'] = self._original(game_path, data)
         return out
 
+    def _adboards(self, boards: list[dict], folder: str, what: str, keys: tuple) -> list[dict]:
+        """The board files of a team or a league, decoded: [{image, source_path, original?, <keys>}] (0 = any -> None)."""
+        out = []
+        for b in boards:
+            name = '_'.join(str(b[k]) for k in keys)
+            pic = self._picture(b['path'], f'{folder}/adboards/{name}.png', what, decode=_board_picture)
+            if pic:
+                out.append({**pic, **{k: b[k] or None for k in keys if k != 'variant'}, 'variant': b['variant']})
+        return out
+
+    def adboard(self, name: str) -> dict | None:
+        """A board file picked on its own: {name, kind, image, source_path, original?, ...its name's numbers}."""
+        found = self.src.all_adboards.get(name)
+        if found is None:
+            self.warnings.append(f'adboard {name}: not in the game')
+            return None
+        pic = self._picture(found['path'], f'adboards/{name}.png', f'adboard {name}', decode=_board_picture)
+        if pic is None:
+            return None
+        keys = ('number', 'group') if found['kind'] == 'game' else ('team', 'tournament', 'stadium', 'variant')
+        return {'name': name, 'kind': found['kind'], **pic, **{k: found[k] for k in keys}}
+
     # ---- items ----------------------------------------------------------------------------------------------
 
     def league(self, lid: int) -> dict | None:
@@ -166,6 +198,8 @@ class _Builder:
             'country_nation_id': country,
             'team_ids': self.src.league_teams.get(lid, []),
             'images': pictures,
+            'adboards': self._adboards(self.src.league_adboards(lid), f'leagues/{lid}', f'league {lid} adboard',
+                                       ('stadium', 'variant')) if self.opt.include_adboards else [],
             'raw': self.src.related_rows('leagueid', lid),
         }
 
@@ -295,6 +329,9 @@ class _Builder:
             'formation': self.src.formation(tid),
             'stadium_ids': stadiums,
             'stadium_custom_name': self.src.stadium_custom_names.get(tid),
+            'adboard_tournament_id': self.src.team_tournament(tid),
+            'adboards': self._adboards(self.src.team_adboards(tid), f'teams/{tid}', f'team {tid} adboard',
+                                       ('tournament', 'stadium', 'variant')) if self.opt.include_adboards else [],
             'raw': raw,
         }
 
@@ -419,7 +456,8 @@ class _Builder:
         team_stadiums = ({s for tid in self.sel.teams for s in self.src.team_stadiums.get(tid, [])}
                          if self.opt.include_stadiums else set())
         stadium_count = len(team_stadiums | set(self.sel.stadiums))
-        total, done = len(league_ids) + len(self.sel.teams) + len(player_ids) + stadium_count, 0
+        board_names = list(dict.fromkeys(self.sel.adboards))
+        total, done = len(league_ids) + len(self.sel.teams) + len(player_ids) + stadium_count + len(board_names), 0
 
         def step(item):
             nonlocal done
@@ -434,6 +472,7 @@ class _Builder:
         players = [x for x in (step(self.player(pid, rosters)) for pid in player_ids) if x]
         stadiums = [x for x in (step(self.stadium(sid)) for sid in sorted(self.stadium_ids)) if x]
         nations = [x for x in (self.nation(nid) for nid in sorted(self.nation_ids)) if x]
+        boards = [x for x in (step(self.adboard(name)) for name in board_names) if x]
         credits = {k: v for k, v in {'text': (self.opt.credits or '').strip() or None,
                                      'url': normalize_link(self.opt.credits_url)}.items() if v}
         manifest = {
@@ -450,12 +489,14 @@ class _Builder:
             'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'),
             'includes_originals': self.opt.include_originals,
         'includes_stadiums': self.opt.include_stadiums,
+            'includes_adboards': self.opt.include_adboards,
             'credits': credits or None,
             'leagues': leagues,
             'teams': teams,
             'players': players,
             'nations': nations,
             'stadiums': stadiums,
+            'adboards': boards,
         }
         return Package(manifest, self.files, self.warnings)
 

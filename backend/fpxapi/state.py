@@ -88,7 +88,7 @@ class SourceHolder:
                 'language': src.language,
                 'languages': src.languages(),
                 'counts': {'leagues': len(src.leagues), 'teams': len(src.teams), 'players': len(src.players),
-                           'nations': len(src.nations), 'stadiums': len(src.stadiums)},
+                           'nations': len(src.nations), 'stadiums': len(src.stadiums), 'adboards': len(src.all_adboards)},
                 'suspect_birthdates': [fifa14.to_date(d) for d in sorted(src.suspect_birthdates)],
                 'warnings': src.warnings,
             })
@@ -99,10 +99,11 @@ class SourceHolder:
 
 def empty_basket() -> dict:
     """nations: [ids]; leagues: [ids]; teams: {"<id>": {"players": [ids], "crest_no_background": bool}}; players:
-    [ids] that go without a team; stadiums: [ids] picked on their own; form: the export screen's fields."""
-    return {'nations': [], 'leagues': [], 'teams': {}, 'players': [], 'stadiums': [],
+    [ids] that go without a team; stadiums: [ids] picked on their own; adboards: [board file names] picked on their
+    own; form: the export screen's fields."""
+    return {'nations': [], 'leagues': [], 'teams': {}, 'players': [], 'stadiums': [], 'adboards': [],
             'form': {'patch_name': '', 'credits': '', 'credits_url': '', 'include_originals': True,
-                     'include_stadiums': True}}
+                     'include_stadiums': True, 'include_adboards': True}}
 
 
 class Basket:
@@ -125,6 +126,7 @@ class Basket:
                                                 'crest_no_background': bool(v.get('crest_no_background'))}
             out['players'] = [i for i in data.get('players', []) if isinstance(i, int)]
             out['stadiums'] = [i for i in data.get('stadiums', []) if isinstance(i, int)]  # missing in older baskets
+            out['adboards'] = [i for i in data.get('adboards', []) if isinstance(i, str)]  # missing in older baskets
             if isinstance(data.get('form'), dict):
                 out['form'].update({k: v for k, v in data['form'].items() if k in out['form']})
         return out
@@ -169,6 +171,15 @@ class Basket:
 
     def _op_remove_stadium(self, src, id: int):
         self.data['stadiums'] = [i for i in self.data['stadiums'] if i != id]
+
+    def _op_add_adboard(self, src, id: str):
+        if not isinstance(id, str) or not id:
+            raise ValueError('id')
+        if id not in self.data['adboards']:
+            self.data['adboards'].append(id)
+
+    def _op_remove_adboard(self, src, id: str):
+        self.data['adboards'] = [i for i in self.data['adboards'] if i != id]
 
     def _op_add_league(self, src, id: int):
         src = self._need(src)
@@ -253,7 +264,8 @@ class Basket:
             teams={int(k): package.TeamPick(list(v['players']), v['crest_no_background'])
                    for k, v in self.data['teams'].items()},
             players=list(self.data['players']),
-            stadiums=list(self.data['stadiums']))
+            stadiums=list(self.data['stadiums']),
+            adboards=list(self.data['adboards']))
 
 
 # ---- saved selections -------------------------------------------------------------------------------------------
@@ -286,6 +298,7 @@ class Selections:
                 'source_path': d.get('source_path'), 'nations': len(b.get('nations') or []),
                 'leagues': len(b.get('leagues') or []), 'teams': len(teams),
                 'stadiums': len(b.get('stadiums') or []),
+                'adboards': len(b.get('adboards') or []),
                 'players': len(players)}
 
     def list(self) -> list[dict]:
@@ -358,7 +371,7 @@ class Exports:
             package.write(pkg, path)
             m = pkg.manifest
             job.result = {'name': file_name, 'path': path, 'size': os.path.getsize(path), 'warnings': pkg.warnings,
-                          'counts': {k: len(m[k]) for k in ('nations', 'leagues', 'teams', 'players', 'stadiums')}}
+                          'counts': {k: len(m[k]) for k in ('nations', 'leagues', 'teams', 'players', 'stadiums', 'adboards')}}
             job.state = 'done'
         except Exception as e:  # noqa: BLE001 - shown on the export screen; the cause goes to the log
             log.exception('export failed')
