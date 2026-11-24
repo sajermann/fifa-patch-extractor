@@ -262,3 +262,25 @@ export function ColorDot({
     />
   );
 }
+
+/** A boot, glove or ball of the game (`kind` = its list), drawn from its files. */
+export function EquipmentImage({
+  kind,
+  code,
+  size,
+  className,
+}: {
+  kind: string;
+  code: number;
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <GameImage
+      url={`/api/image/equipment/${kind}/${code}${size ? `?size=${size}` : ""}`}
+      alt=""
+      className={className}
+      fallback={<ImageOff className="size-1/2" />}
+    />
+  );
+}

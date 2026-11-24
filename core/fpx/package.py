@@ -14,7 +14,7 @@ import zipfile
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
-from . import fifa14, images, kitfonts, rx3
+from . import equipment as gear_files, fifa14, images, kitfonts, rx3
 
 FORMAT = 'fifa-patch-package'
 FORMAT_VERSION = 1
@@ -36,6 +36,10 @@ class Selection:
     players: list[int] = field(default_factory=list)  # players that go without a team
     stadiums: list[int] = field(default_factory=list)  # stadiums picked on their own (go even without include_stadiums)
     adboards: list[str] = field(default_factory=list)  # board files picked on their own (file names, see all_adboards)
+    # boots, goalkeeper gloves and balls picked on their own (codes; go even without include_equipment)
+    boots: list[int] = field(default_factory=list)
+    gloves: list[int] = field(default_factory=list)
+    balls: list[int] = field(default_factory=list)
 
     def player_ids(self) -> list[int]:
         out = dict.fromkeys(self.players)
@@ -52,6 +56,8 @@ class Options:
     include_originals: bool = True
     include_stadiums: bool = True  # the stadium of every exported team, with its scene files (large)
     include_adboards: bool = True  # the board files of every exported team and league
+    include_equipment: bool = True  # the boots and gloves of the exported players, the balls of the exported teams
+    #                                (the ones picked on their own go anyway)
     tool_name: str = 'fifa-patch-extractor'
     tool_version: str = '0.0.0'
 
@@ -105,6 +111,8 @@ def _id(value):
 
 # tables with a stadiumid that describe matches or saves, not the stadium
 STADIUM_RAW_SKIP = ('fixtures', 'career_managerpref', 'teamstadiumlinkscache')
+
+EQUIPMENT_LISTS = {'boot': 'boots', 'glove': 'gloves', 'ball': 'balls'}  # the manifest's list of each kind
 
 
 class _Builder:
@@ -175,6 +183,54 @@ class _Builder:
             return None
         keys = ('number', 'group') if found['kind'] == 'game' else ('team', 'tournament', 'stadium', 'variant')
         return {'name': name, 'kind': found['kind'], **pic, **{k: found[k] for k in keys}}
+
+    def equipment(self, kind: str, code: int, names: dict[int, str], listing: list[str]) -> dict | None:
+        """A boot, glove or ball: {source_id, name, files, picture?, raw}."""
+        rows = gear_files.EQUIPMENT[kind][5]
+        files = {}
+        for path in gear_files.code_files(kind, code, listing):
+            data = self._read(path, f'{kind} {code}')
+            if data is not None:
+                files[path] = self._original(path, data)
+        if not files:
+            self.warnings.append(f'{kind} {code}: no files in the game')
+            return None
+        out = {'source_id': code, 'name': names.get(code), 'files': files}
+        if kind == 'ball':
+            picture = gear_files.BALL_PICTURE.format(code)
+            if self.src.files.exists(picture):
+                pic = self._picture(picture, f'balls/{code}/picture.png', f'ball {code} picture', decode=images.apt_picture)
+                if pic:
+                    out['picture'] = pic
+                    files[picture] = pic.get('original') or self._original(picture, self.src.files.read(picture))
+        if rows:
+            table, column = rows
+            out['raw'] = {table: [r for r in self.src.rows(table) if r.get(column) == code]}
+        else:
+            out['raw'] = {}
+        return out
+
+    def equipment_codes(self, team_ids: list[int], player_ids: list[int]) -> dict[str, list[int]]:
+        """The codes that go of each kind: the ones picked on their own, plus (include_equipment) the boots and gloves
+        of the exported players and the balls of the exported teams."""
+        out = {}
+        for kind in gear_files.KINDS:
+            table, column = gear_files.EQUIPMENT[kind][:2]
+            codes = {c for c in getattr(self.sel, EQUIPMENT_LISTS[kind]) if isinstance(c, int) and c > 0}
+            if self.opt.include_equipment:
+                rows = [self.src.players.get(pid) for pid in player_ids] if table == 'players' else \
+                    [self.src.teams.get(tid) for tid in team_ids]
+                codes |= {r.get(column) for r in rows if r and isinstance(r.get(column), int) and r.get(column) > 0}
+            out[kind] = sorted(codes)
+        return out
+
+    def all_equipment(self, codes: dict[str, list[int]], step=lambda x: x) -> dict[str, list[dict]]:
+        out = {}
+        for kind in gear_files.KINDS:
+            names = gear_files.names(self.src, kind) if codes[kind] else {}
+            listing = list(self.src.files.list(gear_files.folder(kind))) if codes[kind] else []
+            out[kind] = [x for x in (step(self.equipment(kind, c, names, listing)) for c in codes[kind]) if x]
+        return out
 
     # ---- items ----------------------------------------------------------------------------------------------
 
@@ -457,7 +513,10 @@ class _Builder:
                          if self.opt.include_stadiums else set())
         stadium_count = len(team_stadiums | set(self.sel.stadiums))
         board_names = list(dict.fromkeys(self.sel.adboards))
-        total, done = len(league_ids) + len(self.sel.teams) + len(player_ids) + stadium_count + len(board_names), 0
+        gear_codes = self.equipment_codes(list(self.sel.teams), player_ids)
+        total = len(league_ids) + len(self.sel.teams) + len(player_ids) + stadium_count + len(board_names) + \
+            sum(len(c) for c in gear_codes.values())
+        done = 0
 
         def step(item):
             nonlocal done
@@ -473,6 +532,7 @@ class _Builder:
         stadiums = [x for x in (step(self.stadium(sid)) for sid in sorted(self.stadium_ids)) if x]
         nations = [x for x in (self.nation(nid) for nid in sorted(self.nation_ids)) if x]
         boards = [x for x in (step(self.adboard(name)) for name in board_names) if x]
+        gear = self.all_equipment(gear_codes, step)
         credits = {k: v for k, v in {'text': (self.opt.credits or '').strip() or None,
                                      'url': normalize_link(self.opt.credits_url)}.items() if v}
         manifest = {
@@ -488,8 +548,9 @@ class _Builder:
             'tool': {'name': self.opt.tool_name, 'version': self.opt.tool_version},
             'created_at': datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds'),
             'includes_originals': self.opt.include_originals,
-        'includes_stadiums': self.opt.include_stadiums,
+            'includes_stadiums': self.opt.include_stadiums,
             'includes_adboards': self.opt.include_adboards,
+            'includes_equipment': self.opt.include_equipment,
             'credits': credits or None,
             'leagues': leagues,
             'teams': teams,
@@ -497,6 +558,7 @@ class _Builder:
             'nations': nations,
             'stadiums': stadiums,
             'adboards': boards,
+            **{EQUIPMENT_LISTS[k]: gear[k] for k in gear_files.KINDS},
         }
         return Package(manifest, self.files, self.warnings)
 

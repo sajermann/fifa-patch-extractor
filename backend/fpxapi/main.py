@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from . import settings  # noqa: I001 - first: it puts the core folder on the path
 
-from fpx import fifa14, images, kitfonts, kitprint, package, preview, rx3, stadium3d  # noqa: E402
+from fpx import equipment, fifa14, images, kitfonts, kitprint, package, preview, rx3, stadium3d  # noqa: E402
 
 from . import dialogs, views  # noqa: E402
 from .state import Basket, Exports, Selections, SourceHolder
@@ -117,11 +117,15 @@ def forget_recent(path: str):
 def basket_counts() -> dict:
     d = basket.data
     return {'nations': len(d['nations']), 'leagues': len(d['leagues']), 'teams': len(d['teams']),
-            'players': len(basket.player_ids()), 'stadiums': len(d['stadiums']), 'adboards': len(d['adboards'])}
+            'players': len(basket.player_ids()), 'stadiums': len(d['stadiums']), 'adboards': len(d['adboards']),
+            **{kind: len(d[kind]) for kind in views.EQUIPMENT_KIND}}
+
+
+ON_THEIR_OWN = ('nations', 'stadiums', 'adboards', *views.EQUIPMENT_KIND)  # basket lists of ids picked alone
 
 
 def _with_basket(kind: str, rows: list[dict]) -> list[dict]:
-    if kind in ('nations', 'stadiums', 'adboards'):
+    if kind in ON_THEIR_OWN:
         inside = set(basket.data[kind])
         return [{**r, 'in_basket': r['id'] in inside} for r in rows]
     if kind == 'leagues':
@@ -143,7 +147,7 @@ def _basket_filter(kind: str, rows: list[dict], value: Optional[str]):
     want = _yes_no(value)
     if want is None:
         return rows
-    if kind in ('nations', 'stadiums', 'adboards'):
+    if kind in ON_THEIR_OWN:
         inside = set(basket.data[kind])
     elif kind == 'leagues':
         inside = set(basket.data['leagues'])
@@ -197,6 +201,24 @@ def list_adboards(q: str = '', kind: Optional[str] = None, in_basket: Optional[s
     rows = _basket_filter('adboards', rows, in_basket)
     out = views.page(rows, 'adboards', sort, dir, page, size)
     out['items'] = _with_basket('adboards', out['items'])
+    return out
+
+
+@app.get('/api/equipment/{kind}')
+def list_equipment(kind: str, q: str = '', used: Optional[str] = None, in_basket: Optional[str] = None,
+                   sort: Optional[str] = None, dir: Optional[str] = None, page: int = 1,
+                   size: int = views.DEFAULT_PAGE_SIZE):
+    """The game's boots, goalkeeper gloves or balls (kind: boots | gloves | balls); used: worn by a player / a team."""
+    if kind not in views.EQUIPMENT_KIND:
+        raise ApiError(404, 'not_found')
+    _, idx = ready()
+    items = idx.equipment[kind]
+    rows = [items[i] for i in idx.search(kind, list(items), q)]
+    if (want := _yes_no(used)) is not None:
+        rows = [r for r in rows if (r['wearers'] > 0) == want]
+    rows = _basket_filter(kind, rows, in_basket)
+    out = views.page(rows, kind, sort, dir, page, size)
+    out['items'] = _with_basket(kind, out['items'])
     return out
 
 
@@ -585,6 +607,32 @@ def adboard_image(name: str, size: Optional[int] = None):
     return _png(('adboard', name, s), make)
 
 
+@app.get('/api/image/equipment/{kind}/{code}')
+def equipment_image(kind: str, code: int, size: Optional[int] = None):
+    """A boot, glove or ball drawn from its mesh and colour texture (boots: design 0, else the first one)."""
+    one = views.EQUIPMENT_KIND.get(kind)
+    src, idx = ready()
+    if one is None or code not in idx.equipment[kind]:
+        raise ApiError(404, 'not_found')
+    width = _size(size) or 512
+
+    def make():
+        mesh = src.files.read(equipment.mesh_path(one, code))
+        texture = src.files.read(equipment.texture_path(one, code))
+        if texture is None:
+            others = [p for p in equipment.code_files(one, code, src.files.list(equipment.folder(one)))
+                      if p.endswith('_textures.rx3')]
+            texture = src.files.read(others[0]) if others else None
+        if mesh is None or texture is None:
+            return None
+        try:
+            return images.png(equipment.thumbnail(one, mesh, texture, width))
+        except Exception:  # noqa: BLE001 - a file it cannot draw: the screen shows its placeholder
+            log.warning('cannot draw %s %s', one, code, exc_info=True)
+            return None
+    return _png(('equipment', kind, code, width), make)
+
+
 @app.get('/api/image/stadium/{sid}/{variant}')
 def stadium_image(sid: int, variant: int, size: Optional[int] = None):
     src, _ = ready()
@@ -735,7 +783,7 @@ class BasketOp(BaseModel):
     args: dict[str, Any] = {}
 
 
-BASKET_OPS = {'add_adboard', 'remove_adboard', 'add_stadium', 'remove_stadium', 'add_nation', 'remove_nation', 'add_league', 'remove_league', 'add_team', 'remove_team', 'set_team', 'pick', 'add_players',
+BASKET_OPS = {'add_equipment', 'remove_equipment', 'add_adboard', 'remove_adboard', 'add_stadium', 'remove_stadium', 'add_nation', 'remove_nation', 'add_league', 'remove_league', 'add_team', 'remove_team', 'set_team', 'pick', 'add_players',
               'remove_players', 'clear', 'set_form'}
 
 
@@ -770,8 +818,12 @@ def basket_view():
     players = [{'id': i, 'name': name(idx.players, i) if idx else None} for i in d['players']]
     stadiums = [{'id': i, 'name': name(idx.stadiums, i) if idx else None} for i in d['stadiums']]
     adboards = [{'id': i, 'name': i if idx and i in idx.adboards else None} for i in d['adboards']]
+    # boots, gloves, balls: found = the loaded game has it; name = the game's name of it (None = has none)
+    gear = {kind: [{'id': i, 'found': bool(idx and i in idx.equipment[kind]),
+                    'name': idx.equipment[kind][i]['name'] if idx and i in idx.equipment[kind] else None}
+                   for i in d[kind]] for kind in views.EQUIPMENT_KIND}
     return {'nations': nations, 'leagues': leagues, 'teams': teams, 'stadiums': stadiums, 'players': players,
-            'adboards': adboards, 'form': d['form'], 'counts': basket_counts()}
+            'adboards': adboards, **gear, 'form': d['form'], 'counts': basket_counts()}
 
 
 # ---- saved selections ---------------------------------------------------------------------------------------------
@@ -826,7 +878,7 @@ def start_export():
     form = basket.data['form']
     selection = basket.selection()
     if not (selection.nations or selection.leagues or selection.teams or selection.players or selection.stadiums
-            or selection.adboards):
+            or selection.adboards or selection.boots or selection.gloves or selection.balls):
         raise ApiError(400, 'basket_empty')
     if form.get('credits_url') and not package.normalize_link(form['credits_url']):
         raise ApiError(400, 'invalid_link')
@@ -835,6 +887,7 @@ def start_export():
                               include_originals=bool(form.get('include_originals', True)),
                               include_stadiums=bool(form.get('include_stadiums', True)),
                               include_adboards=bool(form.get('include_adboards', True)),
+                              include_equipment=bool(form.get('include_equipment', True)),
                               tool_version=settings.APP_VERSION)
     folder = settings.load().exports_dir()
     try:

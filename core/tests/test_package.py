@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 
 import fakegame
-from fpx import package
+from fpx import equipment, package
 from fpx.fifa14 import Fifa14Source
 from fpx.package import Options, Selection, TeamPick
 
@@ -242,3 +242,48 @@ def test_adboards_on_their_own_and_without_them(src):
     assert (own['kind'], own['team'], own['tournament'], own['variant']) == ('specific', fakegame.TEAM, 0, 1)
     assert game['image'] == 'adboards/adboard_3_0.png' and game['image'] in pkg.files and 'original' not in game
     assert 'adboard nope: not in the game' in pkg.warnings
+
+
+def test_equipment_of_the_exported_players_and_teams(src):
+    roster = _roster(src, fakegame.TEAM)
+    pkg = package.build(src, Selection(teams={fakegame.TEAM: TeamPick(roster)}), Options(include_originals=False))
+    m = pkg.manifest
+    assert m['includes_equipment'] is True
+    boot, = m['boots']
+    assert boot['source_id'] == fakegame.GAME_BOOT and boot['name'] == 'B01'
+    assert sorted(boot['files']) == [f'data/sceneassets/shoe/shoe_{fakegame.GAME_BOOT}.rx3',
+                                     f'data/sceneassets/shoe/shoe_{fakegame.GAME_BOOT}_0_textures.rx3']  # not 151
+    assert [r['shoetype'] for r in boot['raw']['playerboots']] == [fakegame.GAME_BOOT]
+    assert all(pkg.files[z] for z in boot['files'].values())  # the files go even without the originals
+    glove, = m['gloves']
+    assert glove['name'] == 'G01' and len(glove['files']) == 2
+    ball, = m['balls']
+    assert ball['name'] == 'L01' and [r['ballid'] for r in ball['raw']['teamballs']] == [fakegame.GAME_BALL]
+    pkg = package.build(src, Selection(teams={fakegame.TEAM: TeamPick(roster)}), Options(include_equipment=False))
+    assert pkg.manifest['boots'] == pkg.manifest['gloves'] == pkg.manifest['balls'] == []
+
+
+def test_equipment_picked_on_its_own(src):
+    sel = Selection(players=[fakegame.KEEPER], boots=[fakegame.GAME_BOOT], balls=[fakegame.GAME_BALL, 999])
+    pkg = package.build(src, sel, Options(include_equipment=False))
+    m = pkg.manifest
+    assert [b['source_id'] for b in m['boots']] == [fakegame.GAME_BOOT]
+    assert [b['source_id'] for b in m['balls']] == [fakegame.GAME_BALL]  # 999: no files
+    assert m['gloves'] == []  # the keeper's glove only goes with include_equipment
+    assert 'ball 999: no files in the game' in pkg.warnings
+    pkg = package.build(src, Selection(players=[fakegame.KEEPER], gloves=[fakegame.GAME_GLOVE]))
+    assert [g['source_id'] for g in pkg.manifest['gloves']] == [fakegame.GAME_GLOVE]  # once, not twice
+
+
+
+def test_equipment_items(src):
+    boots = equipment.items(src, 'boot')
+    assert sorted(boots) == [fakegame.GAME_BOOT, fakegame.GAME_BOOT * 10 + 1]  # shoe_15 and shoe_151
+    boot = boots[fakegame.GAME_BOOT]
+    assert boot['name'] == 'B01' and boot['wearers'] == 1 and boot['listed'] is True
+    assert boot['files'] == [f'data/sceneassets/shoe/shoe_{fakegame.GAME_BOOT}.rx3',
+                             f'data/sceneassets/shoe/shoe_{fakegame.GAME_BOOT}_0_textures.rx3']
+    glove = equipment.items(src, 'glove')[fakegame.GAME_GLOVE]
+    assert glove['name'] == 'G01' and glove['wearers'] == sum(p['gkglovetypecode'] == fakegame.GAME_GLOVE for p in src.players.values()) and glove['listed'] is None
+    ball = equipment.items(src, 'ball')[fakegame.GAME_BALL]
+    assert ball['name'] == 'L01' and ball['wearers'] == 1 and ball['listed'] is True

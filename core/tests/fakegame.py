@@ -14,6 +14,7 @@ from PIL import Image
 LEAGUE = 9001         # league with every name and both pictures
 PLAIN_LEAGUE = 9002   # league with the database name only, no pictures
 TEAM = 7001           # team with names, crest, the three kits and 16 players (2 goalkeepers)
+GAME_BOOT, GAME_GLOVE, GAME_BALL = 15, 3, 7  # the boot, glove and ball the fake game has files for
 SMALL_TEAM = 7002     # team without names or pictures, 6 players
 STAR = 8001           # player with real face and photo, the best of TEAM
 KEEPER, BACKUP_KEEPER = 8002, 8003
@@ -29,7 +30,7 @@ NATIONS = [{'nationid': 54, 'nationname': 'Nowhereland', 'teamid': -1, 'confeder
 LEAGUES = [{'leagueid': LEAGUE, 'leaguename': 'Test League (1)', 'countryid': 54, 'level': 1},
            {'leagueid': PLAIN_LEAGUE, 'leaguename': 'Plain League', 'countryid': 52, 'level': 2}]
 TEAMS = [
-    {'teamid': TEAM, 'teamname': 'Test Athletic Club', 'teamcolor1r': 200, 'teamcolor1g': 10, 'teamcolor1b': 20,
+    {'teamid': TEAM, 'balltype': GAME_BALL, 'teamname': 'Test Athletic Club', 'teamcolor1r': 200, 'teamcolor1g': 10, 'teamcolor1b': 20,
      'teamcolor2r': 250, 'teamcolor2g': 250, 'teamcolor2b': 250, 'captainid': STAR, 'penaltytakerid': STAR,
      'freekicktakerid': 8004, 'longkicktakerid': 8004, 'leftcornerkicktakerid': 8005,
      'rightcornerkicktakerid': 8005},
@@ -45,6 +46,7 @@ STADIUM_FILES: dict[str, bytes] = {}  # filled at the end of the module (the sce
 
 # language database: (stringid, text); the _upd database overrides the base one
 STRINGS = [
+    (f'CreatePlayerBoot_{GAME_BOOT}', 'B01'), (f'GkGlovePattern_{GAME_GLOVE}', 'G01'), (f'BallName_{GAME_BALL}', 'L01'),
     (f'TeamName_{TEAM}', 'Old Name'),  # replaced by the _upd database
     (f'TeamName_Abbr15_{TEAM}', 'Test Athletic'),
     (f'TeamName_Abbr10_{TEAM}', 'Test Ath.'),
@@ -85,6 +87,8 @@ def _players():
             'birthdate': birthdate, 'nationality': 54, 'skillmoves': 2,
             # appearance codes outside any short list: they must go exactly as they are
             'headtypecode': 2500 + pid % 7, 'hairtypecode': 300 + pid % 5, 'skintonecode': 1 + pid % 10,
+            # boot (the star's own, the others the generic 0) and goalkeeper glove (the goalkeepers')
+            'shoetypecode': GAME_BOOT if pid == STAR else 0, 'gkglovetypecode': GAME_GLOVE if position == 0 else 0,
             **{attr: overall for attr in ('acceleration', 'sprintspeed', 'finishing', 'shortpassing', 'dribbling',
                                           'ballcontrol', 'standingtackle', 'interceptions', 'strength',
                                           'stamina', 'gkdiving', 'gkhandling', 'gkpositioning', 'gkreflexes')}})
@@ -344,6 +348,14 @@ def build(root):
 
 
 ADBOARD_FILES = {
+    # a boot, a glove and a ball (only the ones the exported players and teams use go)
+    f'data/sceneassets/shoe/shoe_{GAME_BOOT}.rx3': b'RX3l boot mesh',
+    f'data/sceneassets/shoe/shoe_{GAME_BOOT}_0_textures.rx3': kit_rx3((0, 90, 0)),
+    f'data/sceneassets/shoe/shoe_{GAME_BOOT}1.rx3': b'RX3l another boot',
+    f'data/sceneassets/gkglove/gkglove_{GAME_GLOVE}.rx3': b'RX3l glove mesh',
+    f'data/sceneassets/gkglove/gkglove_{GAME_GLOVE}_textures.rx3': kit_rx3((90, 90, 90)),
+    f'data/sceneassets/ball/ball_{GAME_BALL}.rx3': b'RX3l ball mesh',
+    f'data/sceneassets/ball/ball_{GAME_BALL}_textures.rx3': kit_rx3((250, 250, 250)),
     f'data/sceneassets/adboard/specificadboard_{TEAM}_{LEAGUE}_0_0.rx3': kit_rx3((200, 0, 0)),
     f'data/sceneassets/adboard/specificadboard_{TEAM}_0_0_1.rx3': kit_rx3((0, 0, 200)),
     f'data/sceneassets/adboard/specificadboard_0_{LEAGUE}_0_0.rx3': kit_rx3((0, 200, 0)),
@@ -384,7 +396,10 @@ def _tables():
                                    'commonname': '', 'playerjerseyname': 'EDITED'}],
             'teamstadiumlinks': [{'teamid': TEAM, 'stadiumid': STADIUM}], 'stadiums': STADIUMS,
             'stadiumassignments': [{'teamid': TEAM, 'stadiumcustomname': 'Custom Park'}],
-            'audionation': [{'nationid': 54, 'chantregionindex': 7, 'defaultcommlang': 'eng_us'}]}
+            'audionation': [{'nationid': 54, 'chantregionindex': 7, 'defaultcommlang': 'eng_us'}],
+            'playerboots': [{'shoetype': GAME_BOOT, 'powid': -1, 'isavailableinstore': 1, 'islicensed': 1},
+                            {'shoetype': GAME_BOOT + 1, 'powid': -1, 'isavailableinstore': 1, 'islicensed': 1}],
+            'teamballs': [{'ballid': GAME_BALL, 'powid': -1, 'isavailableinstore': 1}]}
 
 
 def number_font_rx3(color):

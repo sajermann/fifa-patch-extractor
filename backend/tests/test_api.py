@@ -6,10 +6,13 @@ import fakegame
 from conftest import wait
 
 
+NO_GEAR = {'boots': 0, 'gloves': 0, 'balls': 0}
+
 def test_status(client):
     s = client.get('/api/status').json()
     assert s['source']['state'] == 'ready'
-    assert s['source']['counts'] == {'leagues': 2, 'teams': 2, 'players': 21, 'nations': 2, 'stadiums': 1, 'adboards': 4}
+    assert s['source']['counts'] == {'leagues': 2, 'teams': 2, 'players': 21, 'nations': 2, 'stadiums': 1, 'adboards': 4,
+                                         'boots': 2, 'gloves': 1, 'balls': 1}
     assert s['source']['suspect_birthdates']
 
 
@@ -76,7 +79,7 @@ def test_basket(client):
         r = client.post('/api/basket', json={'op': name, 'args': args})
         assert r.status_code == 200, r.text
         return r.json()
-    assert op('add_league', id=fakegame.LEAGUE) == {'nations': 0, 'leagues': 1, 'teams': 1, 'players': 16, 'stadiums': 0, 'adboards': 0}
+    assert op('add_league', id=fakegame.LEAGUE) == {'nations': 0, 'leagues': 1, 'teams': 1, 'players': 16, 'stadiums': 0, 'adboards': 0, **NO_GEAR}
     assert op('set_team', id=fakegame.TEAM, players=[fakegame.STAR, fakegame.KEEPER])['players'] == 2
     assert op('add_players', ids=[fakegame.SHARED, fakegame.STAR])['players'] == 3  # STAR already inside
     rows = client.get('/api/players', params={'in_basket': 'yes'}).json()['items']
@@ -86,7 +89,7 @@ def test_basket(client):
     assert op('remove_players', ids=[fakegame.STAR])['players'] == 2
     view = client.get('/api/basket').json()
     assert view['teams'][0]['players'] == 1 and view['players'][0]['id'] == fakegame.SHARED
-    assert op('remove_league', id=fakegame.LEAGUE) == {'nations': 0, 'leagues': 0, 'teams': 0, 'players': 1, 'stadiums': 0, 'adboards': 0}
+    assert op('remove_league', id=fakegame.LEAGUE) == {'nations': 0, 'leagues': 0, 'teams': 0, 'players': 1, 'stadiums': 0, 'adboards': 0, **NO_GEAR}
     assert client.post('/api/basket', json={'op': 'nope'}).status_code == 400
 
 
@@ -107,9 +110,9 @@ def test_nations(client):
 
     def op(name, **args):
         return client.post('/api/basket', json={'op': name, 'args': args}).json()
-    assert op('add_nation', id=54) == {'nations': 1, 'leagues': 1, 'teams': 1, 'players': 16, 'stadiums': 0, 'adboards': 0}  # leagues and teams
+    assert op('add_nation', id=54) == {'nations': 1, 'leagues': 1, 'teams': 1, 'players': 16, 'stadiums': 0, 'adboards': 0, **NO_GEAR}  # leagues and teams
     assert client.get('/api/basket').json()['nations'] == [{'id': 54, 'name': 'Republic of Nowhere'}]
-    assert op('remove_nation', id=54) == {'nations': 0, 'leagues': 0, 'teams': 0, 'players': 0, 'stadiums': 0, 'adboards': 0}
+    assert op('remove_nation', id=54) == {'nations': 0, 'leagues': 0, 'teams': 0, 'players': 0, 'stadiums': 0, 'adboards': 0, **NO_GEAR}
 
 
 def test_team_stadium(client):
@@ -239,3 +242,34 @@ def test_adboards(client):
     client.delete(f'/api/exports/{result["name"]}')
     client.post('/api/basket', json={'op': 'set_form', 'args': {'include_adboards': True}})
     assert op('remove_adboard', id='adboard_3_0')['adboards'] == 0
+
+
+def test_equipment(client):
+    boots = client.get('/api/equipment/boots').json()
+    assert [b['id'] for b in boots['items']] == [fakegame.GAME_BOOT, fakegame.GAME_BOOT * 10 + 1]
+    boot = boots['items'][0]
+    assert (boot['name'], boot['wearers'], boot['listed'], boot['files'], boot['in_basket']) == ('B01', 1, True, 2, False)
+    assert client.get('/api/equipment/boots', params={'q': 'b01'}).json()['total'] == 1
+    assert client.get('/api/equipment/boots', params={'used': 'no'}).json()['total'] == 1
+    assert client.get('/api/equipment/gloves').json()['items'][0]['name'] == 'G01'
+    assert client.get('/api/equipment/hats').status_code == 404
+    assert client.get('/api/status').json()['source']['counts']['balls'] == 1
+    # the fake game's meshes are not real meshes: no picture (the screen shows its placeholder)
+    assert client.get(f'/api/image/equipment/boots/{fakegame.GAME_BOOT}').status_code == 404
+
+    def op(name, **args):
+        return client.post('/api/basket', json={'op': name, 'args': args})
+    assert op('add_equipment', kind='balls', id=fakegame.GAME_BALL).json()['balls'] == 1
+    assert op('add_equipment', kind='hats', id=1).status_code == 400
+    assert client.get('/api/equipment/balls', params={'in_basket': 'yes'}).json()['total'] == 1
+    assert client.get('/api/basket').json()['balls'] == [{'id': fakegame.GAME_BALL, 'found': True, 'name': 'L01'}]
+    job = client.post('/api/export').json()  # a ball alone is enough to export
+    wait(lambda: client.get(f'/api/export/{job["id"]}').json()['state'] != 'running')
+    result = client.get(f'/api/export/{job["id"]}').json()['result']
+    assert result['counts']['balls'] == 1 and result['counts']['teams'] == 0
+    path = os.path.join(os.environ['FPX_DATA_DIR'], 'exports', result['name'])
+    with zipfile.ZipFile(path) as z:
+        m = json.loads(z.read('package.json'))
+    assert m['balls'][0]['source_id'] == fakegame.GAME_BALL and m['boots'] == []
+    client.delete(f'/api/exports/{result["name"]}')
+    assert op('remove_equipment', kind='balls', id=fakegame.GAME_BALL).json()['balls'] == 0

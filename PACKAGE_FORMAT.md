@@ -17,8 +17,9 @@ players/<id>/photo.png             player photo, decoded
 nations/<id>/flag.png              flag, decoded
 stadiums/<id>/picture-<n>.png      stadium picture of the menus, decoded (n = the game's picture variant)
 adboards/<file name>.png           advertising board picked on its own, decoded
+balls/<id>/picture.png             the ball's picture of the match settings, decoded
 game/<game path>                   files as the game reads them (chunked containers already unpacked):
-                                   always the fonts, face and stadium scene files; the original pictures,
+                                   always the fonts, face, stadium scene, boot, glove and ball files; the original pictures,
                                    kits and the other flag files too when "includes_originals" is true
 ```
 
@@ -42,9 +43,12 @@ game/<game path>                   files as the game reads them (chunked contain
   "includes_originals": true,
   "includes_stadiums": true,           // the stadiums of the exported teams went too
   "includes_adboards": true,           // the boards of the exported teams and leagues went too
+  "includes_equipment": true,          // the boots, gloves and balls of the exported players and teams went too
+                                       // (the ones picked on their own go anyway)
   "credits": { "text": "…", "url": "https://…" } | null,
   "leagues": [League], "teams": [Team], "players": [Player], "nations": [Nation], "stadiums": [Stadium],
-  "adboards": [Adboard]
+  "adboards": [Adboard],
+  "boots": [Equipment], "gloves": [Equipment], "balls": [Equipment]
 }
 ```
 
@@ -140,6 +144,21 @@ The board files picked on their own (the ones of the exported teams and leagues 
 
 A board picture is 512x1024 in the game: 16 bands of 512x64, one ad per band (top to bottom). Teams' and leagues'
 `adboards` are left empty when `includes_adboards` is false.
+
+### Equipment (boots, gloves, balls)
+
+The boots, goalkeeper gloves and balls picked on their own, plus (when `includes_equipment` is true) the boots
+(`players.shoetypecode`) and goalkeeper gloves (`players.gkglovetypecode`) the exported players wear and the balls
+(`teams.balltype`) of the exported teams, once each (code 0 = none, left out). Missing in packages made before them:
+read as empty lists.
+
+| field | meaning |
+|---|---|
+| `source_id` | the code in the source (the value of the players / teams column) |
+| `name` | its name in the language database (`CreatePlayerBoot_<code>`, `GkGlovePattern_<code>`, `BallName_<code>`), null when the source has none |
+| `files` | `{game path: zip path}` of every file of that code as the source has it: boot `shoe_<code>.rx3` + `shoe_<code>_<design>_textures.rx3`, glove `gkglove_<code>.rx3` + `gkglove_<code>_textures.rx3`, ball `ball_<code>.rx3` + `ball_<code>_textures.rx3` + the match settings picture `data/ui/artassets/settingsimg/ball_<code>.big` |
+| `picture?` | balls: `{image, source_path, original?}` of the match settings picture, decoded |
+| `raw` | boots: the `playerboots` rows of the code; balls: the `teamballs` rows; gloves: none |
 
 ## Versions
 

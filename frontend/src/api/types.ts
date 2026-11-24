@@ -9,7 +9,7 @@ export interface SourceStatus {
   database_from?: string
   language?: string
   languages?: string[]
-  counts?: { leagues: number; teams: number; players: number; nations: number; stadiums: number; adboards: number }
+  counts?: { leagues: number; teams: number; players: number; nations: number; stadiums: number; adboards: number; boots?: number; gloves?: number; balls?: number }
   suspect_birthdates?: (string | null)[]
   warnings?: string[]
 }
@@ -29,6 +29,10 @@ export interface BasketCounts {
   leagues: number
   teams: number
   players: number
+  /** boots, gloves and balls picked on their own (missing before they existed) */
+  boots?: number
+  gloves?: number
+  balls?: number
 }
 
 export interface Status {
@@ -320,6 +324,22 @@ export interface Options {
   levels: number[]
 }
 
+/** The boots, goalkeeper gloves and balls lists (their basket keys and URLs too). */
+export type EquipmentKind = 'boots' | 'gloves' | 'balls'
+
+/** A boot, glove or ball of the game (`id` = its code in the players' / teams' rows). */
+export interface EquipmentRow {
+  id: number
+  /** its name in the game's texts; null = it has none */
+  name: string | null
+  /** how many players (boots, gloves) or teams (balls) use it */
+  wearers: number
+  /** whether its list table has a row for it (boots: playerboots, balls: teamballs); gloves: null */
+  listed: boolean | null
+  files: number
+  in_basket: boolean
+}
+
 export interface BasketForm {
   patch_name: string
   credits: string
@@ -327,6 +347,8 @@ export interface BasketForm {
   include_originals: boolean
   include_stadiums: boolean
   include_adboards: boolean
+  /** the boots and gloves of the exported players and the balls of the exported teams (missing in older baskets) */
+  include_equipment?: boolean
 }
 
 export interface BasketView {
@@ -334,11 +356,21 @@ export interface BasketView {
   stadiums: { id: number; name: string | null }[]
   /** board files picked on their own (file names; name null = the loaded game lacks it) */
   adboards: { id: string; name: string | null }[]
+  /** boots, gloves, balls picked on their own (found false = the loaded game lacks it; missing in older backends) */
+  boots?: BasketGear[]
+  gloves?: BasketGear[]
+  balls?: BasketGear[]
   leagues: { id: number; name: string | null }[]
   teams: { id: number; name: string | null; players: number; roster: number | null; crest_no_background: boolean }[]
   players: { id: number; name: string | null }[]
   form: BasketForm
   counts: BasketCounts
+}
+
+export interface BasketGear {
+  id: number
+  found: boolean
+  name: string | null
 }
 
 export interface SavedSelection {
@@ -350,6 +382,9 @@ export interface SavedSelection {
   nations?: number
   stadiums?: number
   adboards?: number
+  boots?: number
+  gloves?: number
+  balls?: number
   leagues: number
   teams: number
   players: number
@@ -366,7 +401,7 @@ export interface ExportJob {
     path: string
     size: number
     warnings: string[]
-    counts: { nations: number; leagues: number; teams: number; players: number; stadiums?: number; adboards?: number }
+    counts: { nations: number; leagues: number; teams: number; players: number; stadiums?: number; adboards?: number; boots?: number; gloves?: number; balls?: number }
   } | null
 }
 

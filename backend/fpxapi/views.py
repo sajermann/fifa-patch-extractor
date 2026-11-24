@@ -3,7 +3,7 @@ sorting and pagination of the lists (always here, never in the browser) and the 
 import math
 import unicodedata
 
-from fpx import fifa14, stadium3d
+from fpx import equipment, fifa14, stadium3d
 
 PAGE_SIZES = (25, 50, 100)
 DEFAULT_PAGE_SIZE = 50
@@ -36,6 +36,9 @@ class Index:
         self.players = {pid: self._player(pid) for pid in src.players}
         self.stadiums = {sid: self._stadium_row(sid) for sid in src.stadiums}
         self.adboards = {name: self._adboard_row(b) for name, b in src.all_adboards.items()}
+        # boots, gloves, balls: {code: row}
+        self.equipment = {EQUIPMENT_LISTS[k]: {c: self._equipment_row(i) for c, i in equipment.items(src, k).items()}
+                          for k in equipment.KINDS}
         self._search = {
             'nations': {i: fold(' '.join([str(i), *self.src.nation_all_names(i).values()])) for i in self.nations},
             'leagues': {i: fold(' '.join([str(i), *self.src.league_all_names(i).values()])) for i in self.leagues},
@@ -45,6 +48,7 @@ class Index:
                                            *(self.src.stadium_custom_names.get(t, '') for t in
                                              self.src.stadium_teams.get(i, []))])) for i in self.stadiums},
             'adboards': {i: fold(' '.join(str(v) for v in r.values() if v is not None)) for i, r in self.adboards.items()},
+            **{kind: {c: fold(f"{c} {r['name'] or ''}") for c, r in rows.items()} for kind, rows in self.equipment.items()},
         }
 
     # ---- summaries ----------------------------------------------------------------------------------------------
@@ -183,6 +187,13 @@ class Index:
                 'league': self.src.league_display_name(tournament) if tournament in self.src.leagues else None,
                 'stadium': b['stadium'] or None, 'variant': b['variant']}
 
+    @staticmethod
+    def _equipment_row(item: dict) -> dict:
+        """A boot, glove or ball of the list: its code, name (None = the game has none), how many players or teams use
+        it, whether its list table has it (gloves: None, they have none) and how many files it has."""
+        return {'id': item['code'], 'name': item['name'], 'wearers': item['wearers'], 'listed': item['listed'],
+                'files': len(item['files'])}
+
     # ---- lists --------------------------------------------------------------------------------------------------
 
     def search(self, kind: str, ids, q: str):
@@ -194,7 +205,11 @@ class Index:
         return [i for i in ids if all(w in texts[i] for w in words)]
 
 
+EQUIPMENT_LISTS = {'boot': 'boots', 'glove': 'gloves', 'ball': 'balls'}
+EQUIPMENT_KIND = {v: k for k, v in EQUIPMENT_LISTS.items()}
+
 SORTS = {
+    **{kind: {'name', 'id', 'wearers'} for kind in EQUIPMENT_KIND},
     'adboards': {'id', 'kind', 'team', 'league', 'tournament'},
     'stadiums': {'name', 'id', 'capacity', 'country', 'team_count'},
     'nations': {'name', 'id', 'confederation', 'league_count', 'player_count'},
@@ -203,7 +218,8 @@ SORTS = {
     'players': {'name', 'id', 'overall', 'potential', 'age', 'birthdate', 'position_code', 'nationality', 'team',
                 'height'},
 }
-DEFAULT_SORT = {'adboards': ('id', 'asc'), 'stadiums': ('name', 'asc'), 'nations': ('name', 'asc'), 'leagues': ('name', 'asc'), 'teams': ('name', 'asc'), 'players': ('overall', 'desc')}
+DEFAULT_SORT = {**{kind: ('id', 'asc') for kind in EQUIPMENT_KIND},
+                'adboards': ('id', 'asc'), 'stadiums': ('name', 'asc'), 'nations': ('name', 'asc'), 'leagues': ('name', 'asc'), 'teams': ('name', 'asc'), 'players': ('overall', 'desc')}
 
 
 def page(rows: list[dict], kind: str, sort: str | None, direction: str | None, page_no: int, size: int) -> dict:
@@ -212,7 +228,8 @@ def page(rows: list[dict], kind: str, sort: str | None, direction: str | None, p
     if sort in SORTS[kind]:
         key = sort
         default_dir = 'asc' if key in ('name', 'country', 'league', 'nationality', 'team', 'position_code',
-                                       'birthdate') or kind == 'adboards' else 'desc'
+                                       'birthdate') or kind == 'adboards' or \
+            (kind in EQUIPMENT_KIND and key != 'wearers') else 'desc'
     desc = (direction or default_dir) == 'desc'
     present = [r for r in rows if r.get(key) is not None]
     missing = [r for r in rows if r.get(key) is None]

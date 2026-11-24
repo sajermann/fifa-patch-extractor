@@ -1,4 +1,4 @@
-import { FolderOpen, Globe, Heart, Landmark, Loader2, Megaphone, Package, Settings, Shield, Trophy, Users } from 'lucide-react'
+import { Footprints, FolderOpen, Globe, Hand, Heart, Landmark, Loader2, Megaphone, Package, Settings, Shield, Trophy, Users, Volleyball } from 'lucide-react'
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { useI18n, type MessageKey } from '@/i18n'
@@ -15,7 +15,12 @@ const NAV: { to: string; label: MessageKey; icon: typeof Trophy }[] = [
   { to: '/players', label: 'nav.players', icon: Users },
   { to: '/stadiums', label: 'nav.stadiums', icon: Landmark },
   { to: '/adboards', label: 'nav.adboards', icon: Megaphone },
+  { to: '/boots', label: 'nav.boots', icon: Footprints },
+  { to: '/gloves', label: 'nav.gloves', icon: Hand },
+  { to: '/balls', label: 'nav.balls', icon: Volleyball },
 ]
+
+type CountKey = 'nations' | 'leagues' | 'teams' | 'players' | 'stadiums' | 'adboards' | 'boots' | 'gloves' | 'balls'
 
 function NavItem({ to, label, icon: Icon, extra }: { to: string; label: MessageKey; icon: typeof Trophy; extra?: React.ReactNode }) {
   const { t } = useI18n()
@@ -56,7 +61,8 @@ export function AppShell() {
   const status = useStatus().data
   const { pathname } = useLocation()
   const basket = status?.basket
-  const total = basket ? basket.nations + basket.leagues + basket.teams + basket.players + basket.stadiums + (basket.adboards ?? 0) : 0
+  const gear = basket ? (basket.boots ?? 0) + (basket.gloves ?? 0) + (basket.balls ?? 0) : 0
+  const total = basket ? basket.nations + basket.leagues + basket.teams + basket.players + basket.stadiums + (basket.adboards ?? 0) + gear : 0
   const source = status?.source
   return (
     <div className="flex h-svh overflow-hidden">
@@ -72,7 +78,7 @@ export function AppShell() {
           <NavItem to="/source" label="nav.source" icon={FolderOpen} extra={source?.state === 'loading' ? <Loader2 className="size-3.5 animate-spin" /> : undefined} />
           <div className="my-2 border-t" />
           {NAV.map((n) => (
-            <NavItem key={n.to} {...n} extra={source?.counts ? <span className="text-xs text-muted-foreground tabular-nums">{source.counts[n.to.slice(1) as 'nations' | 'leagues' | 'teams' | 'players' | 'stadiums' | 'adboards']}</span> : undefined} />
+            <NavItem key={n.to} {...n} extra={source?.counts ? <span className="text-xs text-muted-foreground tabular-nums">{source.counts[n.to.slice(1) as CountKey]}</span> : undefined} />
           ))}
           <div className="my-2 border-t" />
           <NavItem
@@ -124,7 +130,7 @@ export function AppShell() {
           </span>
           {basket && total > 0 && (
             <NavLink to="/export" className="text-xs text-muted-foreground hover:text-foreground">
-              {t('header.basket', { adboards: basket.adboards ?? 0, stadiums: basket.stadiums, nations: basket.nations, leagues: basket.leagues, teams: basket.teams, players: basket.players })}
+              {t('header.basket', { boots: basket.boots ?? 0, gloves: basket.gloves ?? 0, balls: basket.balls ?? 0, adboards: basket.adboards ?? 0, stadiums: basket.stadiums, nations: basket.nations, leagues: basket.leagues, teams: basket.teams, players: basket.players })}
             </NavLink>
           )}
         </header>

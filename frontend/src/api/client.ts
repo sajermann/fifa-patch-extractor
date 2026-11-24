@@ -9,7 +9,7 @@ import type {
   NationDetail,
   NationRow,
   StadiumDetail,
-  StadiumRow, AdboardRow,
+  StadiumRow, AdboardRow, EquipmentKind, EquipmentRow,
   LeagueRow,
   Options,
   Page,
@@ -84,6 +84,7 @@ export const api = {
 
   stadiums: (p: ListParams) => get<Page<StadiumRow>>(`/api/stadiums${query(p)}`),
   adboards: (p: ListParams) => get<Page<AdboardRow>>(`/api/adboards${query(p)}`),
+  equipment: (kind: EquipmentKind, p: ListParams) => get<Page<EquipmentRow>>(`/api/equipment/${kind}${query(p)}`),
   nations: (p: ListParams) => get<Page<NationRow>>(`/api/nations${query(p)}`),
   leagues: (p: ListParams) => get<Page<LeagueRow>>(`/api/leagues${query(p)}`),
   teams: (p: ListParams) => get<Page<TeamRow>>(`/api/teams${query(p)}`),

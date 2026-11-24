@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { api, exportUrl } from '@/api/client'
-import type { BasketForm, ExportJob } from '@/api/types'
+import type { BasketForm, BasketGear, EquipmentKind, ExportJob } from '@/api/types'
 import { Badge, Section } from '@/components/common/detail'
 import { useI18n } from '@/i18n'
 import { useBasketOp, useBasketView, useStatus } from '@/state/queries'
@@ -24,7 +24,7 @@ export function ExportPage() {
   const basket = useBasketView().data
   const op = useBasketOp()
   const ready = useStatus().data?.source.state === 'ready'
-  const empty = !basket || basket.counts.nations + basket.counts.leagues + basket.counts.teams + basket.counts.players + basket.counts.stadiums + basket.counts.adboards === 0
+  const empty = !basket || basket.counts.nations + basket.counts.leagues + basket.counts.teams + basket.counts.players + basket.counts.stadiums + basket.counts.adboards + (basket.counts.boots ?? 0) + (basket.counts.gloves ?? 0) + (basket.counts.balls ?? 0) === 0
   return (
     <div className="max-w-5xl space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -66,6 +66,12 @@ export function ExportPage() {
             <p className="mb-2 text-xs text-muted-foreground">{t('export.adboardsHint')}</p>
             <BoardList items={basket.adboards} onRemove={(id) => op.mutate({ op: 'remove_adboard', args: { id } })} />
           </Section>
+          {(['boots', 'gloves', 'balls'] as const).map((kind) => (
+            <Section key={kind} title={t(`export.${kind}Count`, { count: basket[kind]?.length ?? 0 })}>
+              <p className="mb-2 text-xs text-muted-foreground">{t('export.equipmentHint')}</p>
+              <GearList kind={kind} items={basket[kind] ?? []} onRemove={(id) => op.mutate({ op: 'remove_equipment', args: { kind, id } })} />
+            </Section>
+          ))}
         </div>
       )}
       {basket && <ExportForm form={basket.form} disabled={empty || !ready} />}
@@ -105,6 +111,31 @@ function BoardList({ items, onRemove }: { items: { id: string; name: string | nu
           <Link to={`/adboards?q=${encodeURIComponent(it.id)}`} className="min-w-0 flex-1 truncate hover:underline">
             {it.name ?? <span className="text-amber-700 dark:text-amber-300">{t('export.missingFile', { name: it.id })}</span>}
           </Link>
+          <Button variant="ghost" size="icon-sm" onClick={() => onRemove(it.id)} aria-label={t('basket.remove')} title={t('basket.remove')}>
+            <X />
+          </Button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/** Boots, gloves or balls picked on their own (no screen of their own: the link opens the list, searched by code). */
+function GearList({ kind, items, onRemove }: { kind: EquipmentKind; items: BasketGear[]; onRemove: (id: number) => void }) {
+  const { t } = useI18n()
+  if (!items.length) return <p className="text-sm text-muted-foreground">{t('export.none')}</p>
+  return (
+    <ul className="max-h-72 space-y-1 overflow-auto pr-1 text-sm">
+      {items.map((it) => (
+        <li key={it.id} className="flex items-center gap-2">
+          <Link to={`/${kind}?q=${it.id}`} className="min-w-0 flex-1 truncate hover:underline">
+            {!it.found ? (
+              <span className="text-amber-700 dark:text-amber-300">{t('export.missing', { id: it.id })}</span>
+            ) : (
+              (it.name ?? t('equipment.unnamed', { code: it.id }))
+            )}
+          </Link>
+          <Badge>{it.id}</Badge>
           <Button variant="ghost" size="icon-sm" onClick={() => onRemove(it.id)} aria-label={t('basket.remove')} title={t('basket.remove')}>
             <X />
           </Button>
@@ -204,6 +235,20 @@ function ExportForm({ form, disabled }: { form: BasketForm; disabled: boolean })
           <div>
             <Label htmlFor="adboards">{t('export.includeAdboards')}</Label>
             <p className="text-xs text-muted-foreground">{t('export.includeAdboardsHint')}</p>
+          </div>
+        </div>
+        <div className="flex items-start gap-3">
+          <Checkbox
+            id="equipment"
+            checked={draft.include_equipment !== false}
+            onCheckedChange={(v) => {
+              setDraft({ ...draft, include_equipment: v === true })
+              save({ include_equipment: v === true })
+            }}
+          />
+          <div>
+            <Label htmlFor="equipment">{t('export.includeEquipment')}</Label>
+            <p className="text-xs text-muted-foreground">{t('export.includeEquipmentHint')}</p>
           </div>
         </div>
       </div>
@@ -317,7 +362,7 @@ function SavedSelections() {
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{s.name}</p>
                 <p className="text-xs text-muted-foreground">
-                  {t('selections.counts', { adboards: s.adboards ?? 0, stadiums: s.stadiums ?? 0, nations: s.nations ?? 0, leagues: s.leagues, teams: s.teams, players: s.players })} · {fmtDate(s.updated_at)}
+                  {t('selections.counts', { boots: s.boots ?? 0, gloves: s.gloves ?? 0, balls: s.balls ?? 0, adboards: s.adboards ?? 0, stadiums: s.stadiums ?? 0, nations: s.nations ?? 0, leagues: s.leagues, teams: s.teams, players: s.players })} · {fmtDate(s.updated_at)}
                 </p>
               </div>
               <Button size="sm" variant="outline" onClick={() => load.mutate(s.id)}>
