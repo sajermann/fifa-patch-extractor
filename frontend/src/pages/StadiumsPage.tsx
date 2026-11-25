@@ -1,5 +1,5 @@
+import { Link } from 'react-router-dom'
 import { Landmark } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
 import { SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
@@ -16,7 +16,6 @@ const FILTERS = ['q', 'country', 'home', 'in_basket'] as const
 export function StadiumsPage() {
   const { t } = useI18n()
   usePageLabel(t('nav.stadiums'))
-  const navigate = useNavigate()
   const list = useListState(FILTERS)
   const { data, isFetching } = useList('stadiums', list.request, api.stadiums)
   const options = useOptions().data
@@ -65,7 +64,7 @@ export function StadiumsPage() {
         </TableHeader>
         <TableBody className={isFetching ? 'opacity-70' : undefined}>
           {data?.items.map((s) => (
-            <TableRow key={s.id} className="cursor-pointer" onClick={() => navigate(`/stadiums/${s.id}`)}>
+            <TableRow key={s.id}>
               <TableCell>
                 <BasketCheck
                   checked={s.in_basket}
@@ -83,8 +82,10 @@ export function StadiumsPage() {
                 )}
               </TableCell>
               <TableCell data-grow>
-                <div className="flex items-center gap-2 font-medium">
-                  {s.name}
+                <div className="flex items-center gap-2">
+                  <Link to={`/stadiums/${s.id}`} className="font-medium text-foreground underline-offset-4 hover:underline">
+                    {s.name}
+                  </Link>
                   {!s.has_3d && <Badge>{t('stadiums.no3d')}</Badge>}
                 </div>
                 {s.language_name && s.language_name !== s.name && <div className="text-xs text-muted-foreground">{s.language_name}</div>}

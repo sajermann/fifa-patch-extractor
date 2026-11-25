@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Flag as FlagIcon } from 'lucide-react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
@@ -26,7 +26,6 @@ export function LeaguePage() {
   const tree = useTreeOp()
   const id = Number(useParams().id)
   const token = useToken()
-  const navigate = useNavigate()
   const { data, error } = useQuery({ queryKey: ['league', token, id], queryFn: () => api.league(id), enabled: !!token })
   usePageLabel(data?.name)
   const confederation = useConfederationName()
@@ -107,14 +106,18 @@ export function LeaguePage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  <TableRow className="cursor-pointer" onClick={() => navigate(`/nations/${country.id}`)}>
+                  <TableRow>
                     <TableCell>
                       <RowSelect row={country} />
                     </TableCell>
                     <TableCell>
                       <Flag id={country.id} size={64} available={country.has_flag} className="h-5 w-8" fallback={<FlagIcon className="size-4" />} />
                     </TableCell>
-                    <TableCell className="font-medium">{country.name}</TableCell>
+                    <TableCell>
+                      <Link to={`/nations/${country.id}`} className="font-medium text-foreground underline-offset-4 hover:underline">
+                        {country.name}
+                      </Link>
+                    </TableCell>
                     <TableCell className="text-right">{confederation(country.confederation)}</TableCell>
                     <TableCell className="text-center tabular-nums">{country.league_count}</TableCell>
                     <TableCell className="text-muted-foreground tabular-nums">{country.id}</TableCell>
@@ -143,7 +146,7 @@ export function LeaguePage() {
               </TableHeader>
               <TableBody>
                 {data.teams.map((tm) => (
-                  <TableRow key={tm.id} className="cursor-pointer" onClick={() => navigate(`/teams/${tm.id}`)}>
+                  <TableRow key={tm.id}>
                     <TableCell>
                       <RowSelect row={tm} />
                     </TableCell>
@@ -151,7 +154,7 @@ export function LeaguePage() {
                       <Crest id={tm.id} size={64} available={tm.has_crest} className="size-7 shrink-0" />
                     </TableCell>
                     <TableCell>
-                      <Link to={`/teams/${tm.id}`} className="font-medium hover:underline" onClick={(e) => e.stopPropagation()}>
+                      <Link to={`/teams/${tm.id}`} className="font-medium text-foreground underline-offset-4 hover:underline">
                         {tm.name}
                       </Link>
                     </TableCell>

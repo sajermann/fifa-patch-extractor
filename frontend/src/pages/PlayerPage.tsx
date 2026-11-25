@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
-import { Check, Minus, ScanFace } from 'lucide-react'
+import { AlertTriangle, Check, Info, Minus, ScanFace } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Card } from '@/components/ui/card'
@@ -8,10 +8,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/api/client'
 import type { AccessoryPlace, AccessoryPlaces, PlayerDetail } from '@/api/types'
 import { Badge, BasketCheck, Facts, OverallBadge, Rating, RawTable, Section } from '@/components/common/detail'
-import { Flag, Photo } from '@/components/common/pictures'
+import { EquipmentImage, Flag, Photo } from '@/components/common/pictures'
 import { Preview3D } from '@/components/common/Preview3D'
 import { previewKit } from '@/lib/preview'
-import { DetailSelect } from '@/components/common/selectionTree'
+import { DetailSelect, PartToggle, SelectAllHead } from '@/components/common/selectionTree'
 import { LoadingBlock } from '@/components/layout/LoadingBlock'
 import { hasMessage, useI18n, type MessageKey } from '@/i18n'
 import { useTab } from '@/lib/tabs'
@@ -103,6 +103,11 @@ export function PlayerPage() {
         </TabsContent>
         <TabsContent value="accessories">
           <div className="space-y-4">
+            {/* the boot and goalkeeper glove, as the FIFA 14 Studio's Accessories tab */}
+            <div className="grid items-start gap-4 lg:grid-cols-2">
+              <Gear data={data} kind="boot" />
+              <Gear data={data} kind="glove" />
+            </div>
             <Accessories view={data.accessory_places} />
             <CodeGroup title={t('fieldGroup.animations')} codes={data.animations} />
           </div>
@@ -277,6 +282,61 @@ function Accessories({ view }: { view: AccessoryPlaces }) {
   )
 }
 
+const GOALKEEPER = 0 // the position code of a goalkeeper
+
+/** The boot or goalkeeper glove the player wears, read-only, laid out as the FIFA 14 Studio's card (EquipmentChoice),
+ * with whether it goes in the package (as the team's ball on its Others tab). */
+function Gear({ data, kind }: { data: PlayerDetail; kind: 'boot' | 'glove' }) {
+  const { t } = useI18n()
+  const tx = (key: string) => t(`${kind === 'boot' ? 'playerBoots' : 'playerGloves'}.${key}` as MessageKey)
+  const item = data[kind] ?? null
+  const list = kind === 'boot' ? 'boots' : 'gloves'
+  const state = data.basket_parts?.[kind] ?? null
+  const notKeeper = kind === 'glove' && !!item && data.positions[0]?.code !== GOALKEEPER
+  return (
+    <Section
+      className="min-w-0"
+      title={tx('title')}
+      description={tx('description')}
+      action={<PartToggle nodeKey={data.basket_key.replace('player:', `${kind}:`)} state={state} label={t('part.inPackage')} />}
+    >
+      <div className="grid grid-cols-1 gap-3">
+        <div className="flex items-center gap-3 rounded-lg border p-3">
+          {item ? (
+            <EquipmentImage kind={list} code={item.code} size={128} className="h-12 w-20 shrink-0 object-contain" />
+          ) : (
+            <div className="h-12 w-20 shrink-0 rounded-md bg-muted" />
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-medium">
+              {item ? (
+                <Link to={`/${list}?q=${item.code}`} className="underline-offset-2 hover:underline">
+                  {item.name ?? t('equipment.unnamed', { code: item.code })}
+                </Link>
+              ) : (
+                tx('none')
+              )}
+            </p>
+            <p className="truncate text-xs text-muted-foreground">{item ? t('equipment.codeLabel', { code: item.code }) : tx('noneHint')}</p>
+          </div>
+        </div>
+        {notKeeper && (
+          <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
+            <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+            <span>{t('playerGloves.notGoalkeeper')}</span>
+          </div>
+        )}
+        {kind === 'glove' && !notKeeper && (
+          <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+            <Info className="mt-0.5 size-3.5 shrink-0" />
+            <span>{t('gloves.onlyGoalkeepersRule')}</span>
+          </p>
+        )}
+      </div>
+    </Section>
+  )
+}
+
 /** The codes of one group (animations), read-only, laid out as the FIFA 14 Studio's. */
 function CodeGroup({ title, codes }: { title: string; codes: Record<string, number> }) {
   const { t } = useI18n()
@@ -368,7 +428,15 @@ function DataTab({ data }: { data: PlayerDetail }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-10" />
+              <TableHead className="w-10">
+                <SelectAllHead
+                  rows={data.teams.map((tm) => ({ id: tm.id, basket_key: '', basket_count: null, basket_state: tm.picked ? 'full' : 'none' }))}
+                  total={data.teams.length}
+                  onPick={async (ids, on) => {
+                    for (const team of ids) await op.mutateAsync({ op: 'pick', args: { team, player: data.id, on } })
+                  }}
+                />
+              </TableHead>
               {/* the team takes the free width, pushing No. and position to the right (as the FIFA 14 Studio's) */}
               <TableHead>{t('col.team')}</TableHead>
               <TableHead className="w-28 text-center">{t('col.number')}</TableHead>

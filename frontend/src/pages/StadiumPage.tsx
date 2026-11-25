@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Landmark } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/api/client'
@@ -24,7 +24,6 @@ export function StadiumPage() {
   const { t } = useI18n()
   const id = Number(useParams().id)
   const token = useToken()
-  const navigate = useNavigate()
   const { data, error } = useQuery({ queryKey: ['stadium', token, id], queryFn: () => api.stadium(id), enabled: !!token })
   usePageLabel(data?.name)
   const op = useBasketOp()
@@ -89,11 +88,15 @@ export function StadiumPage() {
                   </TableHeader>
                   <TableBody>
                     {data.teams.map((tm) => (
-                      <TableRow key={tm.id} className="cursor-pointer" onClick={() => navigate(`/teams/${tm.id}?tab=stadium`)}>
+                      <TableRow key={tm.id}>
                         <TableCell>
                           <Crest id={tm.id} size={64} available={tm.has_crest} className="size-7" />
                         </TableCell>
-                        <TableCell className="font-medium">{tm.name}</TableCell>
+                        <TableCell>
+                          <Link to={`/teams/${tm.id}?tab=stadium`} className="font-medium text-foreground underline-offset-4 hover:underline">
+                            {tm.name}
+                          </Link>
+                        </TableCell>
                         <TableCell>{tm.league ?? '—'}</TableCell>
                         <TableCell>{tm.stadium_custom_name ?? '—'}</TableCell>
                       </TableRow>

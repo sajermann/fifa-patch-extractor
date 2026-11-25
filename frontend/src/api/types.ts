@@ -340,6 +340,11 @@ export interface PlayerDetail extends PlayerRow {
   animations: Record<string, number>
   career: { contract_until: number | null; joined: string | null; retiring: number | null }
   photo_where: string | null
+  /** the boot and goalkeeper glove he wears (null = none; missing in older backends) */
+  boot?: { code: number; name: string | null } | null
+  glove?: { code: number; name: string | null } | null
+  /** his parts in the basket (the selection tree's nodes): full | none, or null = he has none */
+  basket_parts?: { boot: TreeState | null; glove: TreeState | null }
   raw: Raw
 }
 

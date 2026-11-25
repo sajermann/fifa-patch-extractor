@@ -521,8 +521,17 @@ def player_detail(pid: int):
         raise ApiError(404, 'not_found')
     row = src.players[pid]
     face = src.face_paths(pid)
+    base = _with_basket('players', [idx.players[pid]])[0]
+    t = tree.Tree(basket.data, src)
+    gear = {kind: t.gear_code(kind, pid) for kind in tree.PLAYER_PARTS}
     return {
-        **_with_basket('players', [idx.players[pid]])[0],
+        **base,
+        # the Accessories tab: the boot and goalkeeper glove he wears, each with whether it goes in the package (the
+        # player's parts in the selection tree: full | none, or None = he has none)
+        'boot': ({'code': c, 'name': (idx.equipment['boots'].get(c) or {}).get('name')} if (c := gear['boot']) else None),
+        'glove': ({'code': c, 'name': (idx.equipment['gloves'].get(c) or {}).get('name')} if (c := gear['glove']) else None),
+        'basket_parts': {k: t.state(base['basket_key'].replace('player:', f'{k}:', 1)) if gear[k] else None
+                         for k in tree.PLAYER_PARTS},
         'names': src.player_names(pid),
         'weight': row.get('weight'),
         'preferred_foot': {1: 'right', 2: 'left'}.get(row.get('preferredfoot')),

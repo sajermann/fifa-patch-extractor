@@ -1,5 +1,5 @@
+import { Link } from 'react-router-dom'
 import { Flag as FlagIcon } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
 import { RowSelect, SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
@@ -25,7 +25,6 @@ export function useConfederationName() {
 export function NationsPage() {
   const { t } = useI18n()
   usePageLabel(t('nav.nations'))
-  const navigate = useNavigate()
   const list = useListState(FILTERS)
   const { data, isFetching } = useList('nations', list.request, api.nations)
   const options = useOptions().data
@@ -63,7 +62,7 @@ export function NationsPage() {
         </TableHeader>
         <TableBody className={isFetching ? 'opacity-70' : undefined}>
           {data?.items.map((n) => (
-            <TableRow key={n.id} className="cursor-pointer" onClick={() => navigate(`/nations/${n.id}`)}>
+            <TableRow key={n.id}>
               <TableCell>
                 <RowSelect row={n} />
               </TableCell>
@@ -71,7 +70,9 @@ export function NationsPage() {
                 <Flag id={n.id} size={64} available={n.has_flag} className="h-5 w-8" fallback={<FlagIcon className="size-4" />} />
               </TableCell>
               <TableCell data-grow>
-                <div className="font-medium">{n.name}</div>
+                <Link to={`/nations/${n.id}`} className="font-medium text-foreground underline-offset-4 hover:underline">
+                  {n.name}
+                </Link>
                 {n.database_name && n.database_name !== n.name && <div className="text-xs text-muted-foreground">{n.database_name}</div>}
               </TableCell>
               <TableCell className="text-right">{confederation(n.confederation)}</TableCell>

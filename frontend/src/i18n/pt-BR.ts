@@ -782,6 +782,16 @@ export const ptBR = {
   'stadium.inPackage': "Levar o estádio no pacote",
   'stadium.inPackageHint': "O estádio do time, com os arquivos 3D do jogo (cerca de 20 a 40 MB).",
   'equipment.codeLabel': "código {code}",
+  'playerBoots.title': 'Chuteira',
+  'playerBoots.description': 'A chuteira que o jogador usa em campo.',
+  'playerBoots.none': 'Genérica (cores do jogo)',
+  'playerBoots.noneHint': 'chuteira genérica pintada com as cores do jogo',
+  'playerGloves.title': 'Luva de goleiro',
+  'playerGloves.description': 'O jogo só mostra esta luva quando a posição preferida do jogador é goleiro.',
+  'playerGloves.none': 'Nenhuma',
+  'playerGloves.noneHint': 'sem luva própria: usa a luva padrão',
+  'playerGloves.notGoalkeeper': 'A posição preferida dele não é goleiro: no jogo ele vai usar a luva padrão, mesmo com esta.',
+  'gloves.onlyGoalkeepersRule': 'O jogo só mostra a luva escolhida em quem tem goleiro como posição preferida. Outro jogador que for para o gol usa a luva padrão.',
 } as const
 
 export type MessageKey = keyof typeof ptBR

@@ -1,5 +1,5 @@
+import { Link } from 'react-router-dom'
 import { ScanFace } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
 import { RowSelect, SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
@@ -16,7 +16,6 @@ const FILTERS = ['q', 'position', 'team', 'face', 'in_basket'] as const
 export function PlayersPage() {
   const { t } = useI18n()
   usePageLabel(t('nav.players'))
-  const navigate = useNavigate()
   const list = useListState(FILTERS)
   const { data, isFetching } = useList('players', list.request, api.players)
   const options = useOptions().data
@@ -72,7 +71,7 @@ export function PlayersPage() {
         </TableHeader>
         <TableBody className={isFetching ? 'opacity-70' : undefined}>
           {data?.items.map((p) => (
-            <TableRow key={p.id} className="cursor-pointer" onClick={() => navigate(`/players/${p.id}`)}>
+            <TableRow key={p.id}>
               <TableCell>
                 <RowSelect row={p} onRemove={() => op.mutateAsync({ op: 'remove_players', args: { ids: [p.id] } })} />
               </TableCell>
@@ -80,8 +79,10 @@ export function PlayersPage() {
                 <Photo id={p.id} size={64} available={p.has_photo} className="size-9 rounded" />
               </TableCell>
               <TableCell data-grow>
-                <div className="flex items-center gap-2 font-medium">
-                  {p.name}
+                <div className="flex items-center gap-2">
+                  <Link to={`/players/${p.id}`} className="font-medium text-foreground underline-offset-4 hover:underline">
+                    {p.name}
+                  </Link>
                   {p.has_face && (
                     <span title={t('players.hasFace')}>
                       <ScanFace className="size-4 text-emerald-600 dark:text-emerald-400" />

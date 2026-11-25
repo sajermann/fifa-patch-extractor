@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
 import { RowSelect, SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
@@ -13,7 +13,6 @@ const FILTERS = ['q', 'country', 'level', 'in_basket'] as const
 export function LeaguesPage() {
   const { t } = useI18n()
   usePageLabel(t('nav.leagues'))
-  const navigate = useNavigate()
   const list = useListState(FILTERS)
   const { data, isFetching } = useList('leagues', list.request, api.leagues)
   const options = useOptions().data
@@ -58,7 +57,7 @@ export function LeaguesPage() {
         </TableHeader>
         <TableBody className={isFetching ? 'opacity-70' : undefined}>
           {data?.items.map((l) => (
-            <TableRow key={l.id} className="cursor-pointer" onClick={() => navigate(`/leagues/${l.id}`)}>
+            <TableRow key={l.id}>
               <TableCell>
                 <RowSelect row={l} />
               </TableCell>
@@ -66,7 +65,9 @@ export function LeaguesPage() {
                 <LeagueImage id={l.id} size={64} available={l.has_logo} className="size-8" />
               </TableCell>
               <TableCell data-grow>
-                <div className="font-medium">{l.name}</div>
+                <Link to={`/leagues/${l.id}`} className="font-medium text-foreground underline-offset-4 hover:underline">
+                  {l.name}
+                </Link>
                 {l.database_name && l.database_name !== l.name && <div className="text-xs text-muted-foreground">{l.database_name}</div>}
               </TableCell>
               <TableCell className="text-right">{l.country ?? '—'}</TableCell>

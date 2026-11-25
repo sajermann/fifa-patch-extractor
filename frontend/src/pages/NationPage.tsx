@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Flag as FlagIcon } from 'lucide-react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
@@ -23,7 +23,6 @@ export function NationPage() {
   const tree = useTreeOp()
   const id = Number(useParams().id)
   const token = useToken()
-  const navigate = useNavigate()
   const { data, error } = useQuery({ queryKey: ['nation', token, id], queryFn: () => api.nation(id), enabled: !!token })
   usePageLabel(data?.name)
   const confederation = useConfederationName()
@@ -115,7 +114,7 @@ export function NationPage() {
                 </TableHeader>
                 <TableBody>
                   {data.leagues.map((l) => (
-                    <TableRow key={l.id} className="cursor-pointer" onClick={() => navigate(`/leagues/${l.id}`)}>
+                    <TableRow key={l.id}>
                       <TableCell>
                         <RowSelect row={l} />
                       </TableCell>
@@ -123,7 +122,7 @@ export function NationPage() {
                         <LeagueImage id={l.id} size={64} available={l.has_logo} className="size-7 shrink-0" />
                       </TableCell>
                       <TableCell>
-                        <Link to={`/leagues/${l.id}`} className="font-medium hover:underline" onClick={(e) => e.stopPropagation()}>
+                        <Link to={`/leagues/${l.id}`} className="font-medium text-foreground underline-offset-4 hover:underline">
                           {l.name}
                         </Link>
                       </TableCell>

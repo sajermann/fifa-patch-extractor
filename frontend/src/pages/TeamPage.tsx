@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { CircleCheck, CircleX, CornerUpLeft, CornerUpRight, Crown, Eye, Goal, MoveUpRight, ScanFace, Target, type LucideIcon } from 'lucide-react'
 import { useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -237,7 +237,6 @@ function CrestTab({ data }: { data: TeamDetail }) {
 /** The leagues the team plays in (the Studio's Leagues tab, without the editing). */
 function LeaguesTab({ data }: { data: TeamDetail }) {
   const { t } = useI18n()
-  const navigate = useNavigate()
   const tree = useTreeOp()
   if (!data.league_rows.length) return <p className="py-6 text-sm text-muted-foreground">{t('teams.noLeagues')}</p>
   return (
@@ -259,14 +258,18 @@ function LeaguesTab({ data }: { data: TeamDetail }) {
         </TableHeader>
         <TableBody>
           {data.league_rows.map((l) => (
-            <TableRow key={l.id} className="cursor-pointer" onClick={() => navigate(`/leagues/${l.id}`)}>
+            <TableRow key={l.id}>
               <TableCell>
                 <RowSelect row={l} />
               </TableCell>
               <TableCell>
                 <LeagueImage id={l.id} size={64} available={l.has_logo} className="size-8 shrink-0" />
               </TableCell>
-              <TableCell className="font-medium">{l.name}</TableCell>
+              <TableCell>
+                <Link to={`/leagues/${l.id}`} className="font-medium text-foreground underline-offset-4 hover:underline">
+                  {l.name}
+                </Link>
+              </TableCell>
               <TableCell className="text-right">{l.country ?? '—'}</TableCell>
               <TableCell className="text-center tabular-nums">{l.level ?? '—'}</TableCell>
               <TableCell className="text-center tabular-nums">{l.team_count}</TableCell>
@@ -355,7 +358,6 @@ const SCROLL_RESERVE = 250 // height kept under the table for the captain and ta
 
 function RosterTable({ data }: { data: TeamDetail }) {
   const { t } = useI18n()
-  const navigate = useNavigate()
   const op = useBasketOp()
   const [n, setN] = useState(12)
   const setPlayers = (players: number[]) => op.mutate({ op: 'set_team', args: { id: data.id, players } })
@@ -408,7 +410,7 @@ function RosterTable({ data }: { data: TeamDetail }) {
         </TableHeader>
         <TableBody>
           {data.roster.map((p) => (
-            <TableRow key={p.id} className="cursor-pointer" onClick={() => navigate(`/players/${p.id}`)}>
+            <TableRow key={p.id}>
               <TableCell>
                 <BasketCheck checked={p.picked} disabled={op.isPending} label={t('teams.pickPlayer')} onChange={(v) => toggle(p.id, v)} />
               </TableCell>
@@ -416,8 +418,10 @@ function RosterTable({ data }: { data: TeamDetail }) {
                 <Photo id={p.id} size={64} available={p.has_photo} className="size-8 rounded" />
               </TableCell>
               <TableCell>
-                <span className="inline-flex items-center gap-2 font-medium">
-                  {p.name}
+                <span className="inline-flex items-center gap-2">
+                  <Link to={`/players/${p.id}`} className="font-medium text-foreground underline-offset-4 hover:underline">
+                    {p.name}
+                  </Link>
                   {p.has_face && <ScanFace className="size-4 text-emerald-600 dark:text-emerald-400" />}
                 </span>
               </TableCell>

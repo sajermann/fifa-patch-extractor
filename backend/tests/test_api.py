@@ -60,6 +60,11 @@ def test_details(client):
     p = client.get(f'/api/players/{fakegame.STAR}').json()
     assert p['names']['last'] == 'Plàyer' and len(p['face_files']) == 4 and p['raw']['playerid'] == fakegame.STAR
     assert p['traits'] == ['leadership', 'finesse_shot', 'one_club_player'] and len(p['all_traits']) == 41
+    # the Accessories tab: his boot (and no glove), not in the empty basket
+    assert p['boot'] == {'code': fakegame.GAME_BOOT, 'name': 'B01'} and p['glove'] is None
+    assert p['basket_parts'] == {'boot': 'none', 'glove': None}
+    keeper = client.get(f'/api/players/{fakegame.KEEPER}').json()
+    assert keeper['glove']['code'] == fakegame.GAME_GLOVE and keeper['boot'] is None
     lg = client.get(f'/api/leagues/{fakegame.LEAGUE}').json()
     assert lg['images'] == ['logo', 'banner'] and lg['teams'][0]['id'] == fakegame.TEAM
     assert lg['language_names']['full'] == {'eng_us': 'Test Premier Division of Nowhere'}

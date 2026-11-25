@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
 import { RowSelect, SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
@@ -15,7 +15,6 @@ const FILTERS = ['q', 'league', 'in_basket'] as const
 export function TeamsPage() {
   const { t } = useI18n()
   usePageLabel(t('nav.teams'))
-  const navigate = useNavigate()
   const list = useListState(FILTERS)
   const { data, isFetching } = useList('teams', list.request, api.teams)
   const options = useOptions().data
@@ -55,7 +54,7 @@ export function TeamsPage() {
         </TableHeader>
         <TableBody className={isFetching ? 'opacity-70' : undefined}>
           {data?.items.map((tm) => (
-            <TableRow key={tm.id} className="cursor-pointer" onClick={() => navigate(`/teams/${tm.id}`)}>
+            <TableRow key={tm.id}>
               <TableCell>
                 <RowSelect row={tm} />
               </TableCell>
@@ -63,8 +62,11 @@ export function TeamsPage() {
                 <Crest id={tm.id} size={64} available={tm.has_crest} className="size-8" />
               </TableCell>
               <TableCell data-grow>
-                <div className="font-medium">
-                  {tm.name} {tm.abbr3 && <span className="ml-1 text-xs text-muted-foreground">{tm.abbr3}</span>}
+                <div>
+                  <Link to={`/teams/${tm.id}`} className="font-medium text-foreground underline-offset-4 hover:underline">
+                    {tm.name}
+                  </Link>{' '}
+                  {tm.abbr3 && <span className="ml-1 text-xs text-muted-foreground">{tm.abbr3}</span>}
                 </div>
                 {tm.in_basket && tm.basket_players !== tm.player_count && (
                   <div className="text-xs text-muted-foreground">{t('teams.inBasketPlayers', { count: tm.basket_players, total: tm.player_count })}</div>
