@@ -57,8 +57,8 @@ export function StadiumsPage() {
             <SortHead field="name" label={t('col.name')} state={sortState} />
             <SortHead field="country" label={t('col.country')} state={sortState} />
             <TableHead>{t('col.homeTeam')}</TableHead>
-            <SortHead field="capacity" label={t('col.capacity')} state={sortState} />
-            <SortHead field="team_count" label={t('col.teams')} state={sortState} />
+            <SortHead field="capacity" label={t('col.capacity')} state={sortState} className="text-center" />
+            <SortHead field="team_count" label={t('col.teams')} state={sortState} className="text-center" />
             <SortHead field="id" label={t('col.id')} state={sortState} />
           </TableRow>
         </TableHeader>
@@ -92,8 +92,8 @@ export function StadiumsPage() {
               </TableCell>
               <TableCell>{s.country ?? '—'}</TableCell>
               <TableCell>{s.home_team ?? '—'}</TableCell>
-              <TableCell className="tabular-nums">{s.capacity?.toLocaleString() ?? '—'}</TableCell>
-              <TableCell className="tabular-nums">{s.team_count}</TableCell>
+              <TableCell className="text-center tabular-nums">{s.capacity?.toLocaleString() ?? '—'}</TableCell>
+              <TableCell className="text-center tabular-nums">{s.team_count}</TableCell>
               <TableCell className="text-muted-foreground tabular-nums">{s.id}</TableCell>
             </TableRow>
           ))}

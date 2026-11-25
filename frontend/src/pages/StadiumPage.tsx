@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
 import { Landmark } from 'lucide-react'
-import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -8,18 +7,18 @@ import { api } from '@/api/client'
 import { BasketButton, Section } from '@/components/common/detail'
 import { Crest, StadiumImage } from '@/components/common/pictures'
 import { LanguageNames } from '@/components/common/names'
+import { RowSelect, SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
 import { Stadium3D, StadiumDatabase, StadiumDetails, StadiumFields } from '@/components/common/stadium'
 import { LoadingBlock } from '@/components/layout/LoadingBlock'
 import { useI18n } from '@/i18n'
 import { BackButton, usePageLabel } from '@/lib/back'
 import { useTab } from '@/lib/tabs'
-import { cn } from '@/lib/utils'
 import { useBasketOp, useToken } from '@/state/queries'
 
 const TABS = ['overview', 'data', 'raw'] as const
 
-/** One stadium. The page never scrolls: its boxes take the height left (half each with the 3D open) and scroll
- * inside. */
+/** One stadium. The Overview tab is laid out as the FIFA 14 Studio's: the data and pictures on top, then the teams
+ * that play there beside the 3D (always open). */
 export function StadiumPage() {
   const { t } = useI18n()
   const id = Number(useParams().id)
@@ -27,8 +26,8 @@ export function StadiumPage() {
   const { data, error } = useQuery({ queryKey: ['stadium', token, id], queryFn: () => api.stadium(id), enabled: !!token })
   usePageLabel(data?.name)
   const op = useBasketOp()
+  const tree = useTreeOp()
   const [tab, setTab] = useTab(TABS)
-  const [open3d, setOpen3d] = useState(false)
   if (error) return <p className="text-destructive">{error.message}</p>
   if (!data) return <LoadingBlock />
   return (
@@ -71,42 +70,49 @@ export function StadiumPage() {
           <TabsTrigger value="data">{t('tab.data')}</TabsTrigger>
           <TabsTrigger value="raw">{t('tab.raw')}</TabsTrigger>
         </TabsList>
-        <TabsContent value="overview" className="flex min-h-0 flex-1 flex-col gap-4">
-          <Stadium3D stadium={data.detail} open={open3d} setOpen={setOpen3d} className={open3d ? 'min-h-0 flex-1' : 'shrink-0'} />
-          <div className={cn('grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]')}>
-            <StadiumDetails stadium={data.detail} title={t('section.details')} scroll className="h-full" />
-            <Section scroll className="h-full" title={t('stadiums.teams', { count: data.teams.length })}>
-              {data.teams.length ? (
-                <Table>
-                  <TableHeader>
+        {/* as the FIFA 14 Studio: the data and pictures on top, then the teams beside the 3D (always open) */}
+        <TabsContent value="overview" className="min-h-0 flex-1 space-y-4 overflow-auto">
+          <StadiumDetails stadium={data.detail} title={t('section.details')} grid />
+          <div className="grid gap-4 lg:h-[70vh] lg:grid-cols-2">
+            <Section scroll className="max-h-[70vh] lg:h-full lg:max-h-none" title={t('stadiums.teams', { count: data.teams.length })}>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-10">
+                      <SelectAllHead rows={data.teams} total={data.teams.length} onPick={(ids, on) => tree.setMany(ids.map((i) => `team:${i}`), on ? 'all' : 'none')} />
+                    </TableHead>
+                    <TableHead className="w-full">{t('col.name')}</TableHead>
+                    <TableHead className="text-right">{t('col.customName')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.teams.length === 0 && (
                     <TableRow>
-                      <TableHead className="w-10" />
-                      <TableHead>{t('col.name')}</TableHead>
-                      <TableHead>{t('col.league')}</TableHead>
-                      <TableHead>{t('col.customName')}</TableHead>
+                      <TableCell colSpan={3} className="py-8 text-center text-muted-foreground">
+                        {t('stadiums.noTeams')}
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {data.teams.map((tm) => (
-                      <TableRow key={tm.id}>
-                        <TableCell>
-                          <Crest id={tm.id} size={64} available={tm.has_crest} className="size-7" />
-                        </TableCell>
-                        <TableCell>
+                  )}
+                  {data.teams.map((tm) => (
+                    <TableRow key={tm.id}>
+                      <TableCell>
+                        <RowSelect row={tm} />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Crest id={tm.id} size={64} available={tm.has_crest} className="size-7 shrink-0" />
                           <Link to={`/teams/${tm.id}?tab=stadium`} className="font-medium text-foreground underline-offset-4 hover:underline">
                             {tm.name}
                           </Link>
-                        </TableCell>
-                        <TableCell>{tm.league ?? '—'}</TableCell>
-                        <TableCell>{tm.stadium_custom_name ?? '—'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              ) : (
-                <p className="text-sm text-muted-foreground">{t('stadiums.noTeams')}</p>
-              )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">{tm.stadium_custom_name ?? '—'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </Section>
+            <Stadium3D stadium={data.detail} open className="h-[70vh] lg:h-full" />
           </div>
         </TabsContent>
         <TabsContent value="data" className="min-h-0 flex-1 space-y-4 overflow-auto">
