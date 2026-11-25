@@ -125,6 +125,7 @@ class Index:
             'country_id': country,
             'country': self.src.nation_name(country),
             'team_count': len(self.src.league_teams.get(lid, [])),
+            'adboard_count': len(self.src.league_adboards(lid)),  # the league's own board files
             'has_logo': 'logo' in self.src.league_image_paths(lid),
         }
 
@@ -213,7 +214,7 @@ SORTS = {
     'adboards': {'id', 'kind', 'team', 'league', 'tournament'},
     'stadiums': {'name', 'id', 'capacity', 'country', 'team_count'},
     'nations': {'name', 'id', 'confederation', 'league_count', 'player_count'},
-    'leagues': {'name', 'id', 'level', 'country', 'team_count'},
+    'leagues': {'name', 'id', 'level', 'country', 'team_count', 'adboard_count'},
     'teams': {'name', 'id', 'overall', 'league', 'player_count', 'kit_count'},
     'players': {'name', 'id', 'overall', 'potential', 'age', 'birthdate', 'position_code', 'nationality', 'team',
                 'height'},

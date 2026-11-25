@@ -17,7 +17,7 @@ from . import settings  # noqa: I001 - first: it puts the core folder on the pat
 
 from fpx import equipment, fifa14, images, kitfonts, kitprint, package, preview, rx3, stadium3d  # noqa: E402
 
-from . import dialogs, views  # noqa: E402
+from . import dialogs, tree, views  # noqa: E402
 from .state import Basket, Exports, Selections, SourceHolder
 
 log = logging.getLogger('fpxapi')
@@ -115,28 +115,71 @@ def forget_recent(path: str):
 # ---- lists --------------------------------------------------------------------------------------------------------
 
 def basket_counts() -> dict:
+    """How many of each go in the package: stadiums, board files, boots, gloves and balls count the ones picked on
+    their own and the ones that go with the teams, leagues and players of the basket (each once)."""
     d = basket.data
-    return {'nations': len(d['nations']), 'leagues': len(d['leagues']), 'teams': len(d['teams']),
-            'players': len(basket.player_ids()), 'stadiums': len(d['stadiums']), 'adboards': len(d['adboards']),
-            **{kind: len(d[kind]) for kind in views.EQUIPMENT_KIND}}
+    out = {'nations': len(d['nations']), 'leagues': len(d['leagues']), 'teams': len(d['teams']),
+           'players': len(basket.player_ids()), 'stadiums': len(d['stadiums']), 'adboards': len(d['adboards']),
+           **{kind: len(d[kind]) for kind in views.EQUIPMENT_KIND}}
+    if source.state == 'ready' and source.src is not None and source.index is not None:
+        out.update(tree.package_counts(d, source.src, source.index))
+    return out
 
 
 ON_THEIR_OWN = ('nations', 'stadiums', 'adboards', *views.EQUIPMENT_KIND)  # basket lists of ids picked alone
 
 
+def _row_key(kind: str, row_id) -> str:
+    """The selection tree's node of a list row (a player: where the basket has it, a team of it or on its own)."""
+    if kind == 'players':
+        d = basket.data
+        if row_id not in d['players']:
+            team = next((k for k, v in d['teams'].items() if row_id in v['players']), None)
+            if team is not None:
+                return f'player:{team}:{row_id}'
+        return f'player:0:{row_id}'
+    if kind in views.EQUIPMENT_KIND:
+        return f'gear:{kind}:{row_id}'
+    return {'nations': 'nation', 'leagues': 'league', 'teams': 'team', 'stadiums': 'onestadium',
+            'adboards': 'adboard'}[kind] + f':{row_id}'
+
+
 def _with_basket(kind: str, rows: list[dict]) -> list[dict]:
+    """The rows with in_basket (the item itself goes) and their node in the selection tree: basket_key,
+    basket_state (full | only | part | none) and basket_count ({on, total} of what is right inside, or None)."""
     if kind in ON_THEIR_OWN:
         inside = set(basket.data[kind])
-        return [{**r, 'in_basket': r['id'] in inside} for r in rows]
-    if kind == 'leagues':
+    elif kind == 'leagues':
         inside = set(basket.data['leagues'])
-        return [{**r, 'in_basket': r['id'] in inside} for r in rows]
-    if kind == 'teams':
-        teams = basket.data['teams']
-        return [{**r, 'in_basket': str(r['id']) in teams,
-                 'basket_players': len(teams[str(r['id'])]['players']) if str(r['id']) in teams else 0} for r in rows]
-    inside = basket.player_ids()
-    return [{**r, 'in_basket': r['id'] in inside} for r in rows]
+    elif kind == 'teams':
+        inside = {int(k) for k in basket.data['teams']}
+    else:
+        inside = basket.player_ids()
+    src = source.src if source.state == 'ready' else None
+    t = tree.Tree(basket.data, src) if src else None
+    out = []
+    for r in rows:
+        key = _row_key(kind, r['id'])
+        row = {**r, 'in_basket': r['id'] in inside, 'basket_key': key,
+               'basket_state': 'full' if r['id'] in inside else 'none', 'basket_count': None}
+        if t is not None and kind in ('nations', 'leagues', 'teams', 'players'):
+            kids = t.children(key)
+            row['basket_state'] = t.state(key)
+            row['basket_count'] = {'on': sum(t.state(k) != 'none' for k in kids), 'total': len(kids)} if kids else None
+        if kind == 'teams':
+            team = basket.data['teams'].get(str(r['id']))
+            row['basket_players'] = len(team['players']) if team else 0
+        out.append(row)
+    return out
+
+
+def _ids_or_page(kind: str, rows: list[dict], ids_only: bool, sort, dir, page, size):
+    """ids_only: the ids of every row that passes the filters (the header's "select all"), else one sorted page."""
+    if ids_only:
+        return {'ids': [r['id'] for r in rows]}
+    out = views.page(rows, kind, sort, dir, page, size)
+    out['items'] = _with_basket(kind, out['items'])
+    return out
 
 
 def _yes_no(value: Optional[str]):
@@ -161,7 +204,7 @@ def _basket_filter(kind: str, rows: list[dict], value: Optional[str]):
 @app.get('/api/nations')
 def list_nations(q: str = '', confederation: Optional[int] = None, leagues: Optional[str] = None,
                  in_basket: Optional[str] = None, sort: Optional[str] = None, dir: Optional[str] = None,
-                 page: int = 1, size: int = views.DEFAULT_PAGE_SIZE):
+                 page: int = 1, size: int = views.DEFAULT_PAGE_SIZE, ids_only: bool = False):
     _, idx = ready()
     rows = [idx.nations[i] for i in idx.search('nations', list(idx.nations), q)]
     if confederation is not None:
@@ -169,15 +212,13 @@ def list_nations(q: str = '', confederation: Optional[int] = None, leagues: Opti
     if (want := _yes_no(leagues)) is not None:
         rows = [r for r in rows if (r['league_count'] > 0) == want]
     rows = _basket_filter('nations', rows, in_basket)
-    out = views.page(rows, 'nations', sort, dir, page, size)
-    out['items'] = _with_basket('nations', out['items'])
-    return out
+    return _ids_or_page('nations', rows, ids_only, sort, dir, page, size)
 
 
 @app.get('/api/stadiums')
 def list_stadiums(q: str = '', country: Optional[int] = None, home: Optional[str] = None,
                   in_basket: Optional[str] = None, sort: Optional[str] = None, dir: Optional[str] = None,
-                  page: int = 1, size: int = views.DEFAULT_PAGE_SIZE):
+                  page: int = 1, size: int = views.DEFAULT_PAGE_SIZE, ids_only: bool = False):
     _, idx = ready()
     rows = [idx.stadiums[i] for i in idx.search('stadiums', list(idx.stadiums), q)]
     if country is not None:
@@ -185,29 +226,25 @@ def list_stadiums(q: str = '', country: Optional[int] = None, home: Optional[str
     if (want := _yes_no(home)) is not None:
         rows = [r for r in rows if (r['home_team_id'] is not None) == want]
     rows = _basket_filter('stadiums', rows, in_basket)
-    out = views.page(rows, 'stadiums', sort, dir, page, size)
-    out['items'] = _with_basket('stadiums', out['items'])
-    return out
+    return _ids_or_page('stadiums', rows, ids_only, sort, dir, page, size)
 
 
 @app.get('/api/adboards')
 def list_adboards(q: str = '', kind: Optional[str] = None, in_basket: Optional[str] = None, sort: Optional[str] = None,
-                  dir: Optional[str] = None, page: int = 1, size: int = views.DEFAULT_PAGE_SIZE):
+                  dir: Optional[str] = None, page: int = 1, size: int = views.DEFAULT_PAGE_SIZE, ids_only: bool = False):
     """The board files of the game: its own boards and the ones a patch's stadium script names."""
     _, idx = ready()
     rows = [idx.adboards[i] for i in idx.search('adboards', list(idx.adboards), q)]
     if kind in ('game', 'specific'):
         rows = [r for r in rows if r['kind'] == kind]
     rows = _basket_filter('adboards', rows, in_basket)
-    out = views.page(rows, 'adboards', sort, dir, page, size)
-    out['items'] = _with_basket('adboards', out['items'])
-    return out
+    return _ids_or_page('adboards', rows, ids_only, sort, dir, page, size)
 
 
 @app.get('/api/equipment/{kind}')
 def list_equipment(kind: str, q: str = '', used: Optional[str] = None, in_basket: Optional[str] = None,
                    sort: Optional[str] = None, dir: Optional[str] = None, page: int = 1,
-                   size: int = views.DEFAULT_PAGE_SIZE):
+                   size: int = views.DEFAULT_PAGE_SIZE, ids_only: bool = False):
     """The game's boots, goalkeeper gloves or balls (kind: boots | gloves | balls); used: worn by a player / a team."""
     if kind not in views.EQUIPMENT_KIND:
         raise ApiError(404, 'not_found')
@@ -217,15 +254,13 @@ def list_equipment(kind: str, q: str = '', used: Optional[str] = None, in_basket
     if (want := _yes_no(used)) is not None:
         rows = [r for r in rows if (r['wearers'] > 0) == want]
     rows = _basket_filter(kind, rows, in_basket)
-    out = views.page(rows, kind, sort, dir, page, size)
-    out['items'] = _with_basket(kind, out['items'])
-    return out
+    return _ids_or_page(kind, rows, ids_only, sort, dir, page, size)
 
 
 @app.get('/api/leagues')
 def list_leagues(q: str = '', country: Optional[int] = None, level: Optional[int] = None,
                  in_basket: Optional[str] = None, sort: Optional[str] = None, dir: Optional[str] = None,
-                 page: int = 1, size: int = views.DEFAULT_PAGE_SIZE):
+                 page: int = 1, size: int = views.DEFAULT_PAGE_SIZE, ids_only: bool = False):
     _, idx = ready()
     rows = [idx.leagues[i] for i in idx.search('leagues', list(idx.leagues), q)]
     if country is not None:
@@ -233,15 +268,13 @@ def list_leagues(q: str = '', country: Optional[int] = None, level: Optional[int
     if level is not None:
         rows = [r for r in rows if r['level'] == level]
     rows = _basket_filter('leagues', rows, in_basket)
-    out = views.page(rows, 'leagues', sort, dir, page, size)
-    out['items'] = _with_basket('leagues', out['items'])
-    return out
+    return _ids_or_page('leagues', rows, ids_only, sort, dir, page, size)
 
 
 @app.get('/api/teams')
 def list_teams(q: str = '', league: Optional[int] = None, kits: Optional[str] = None, national: Optional[str] = None,
                in_basket: Optional[str] = None, sort: Optional[str] = None, dir: Optional[str] = None,
-               page: int = 1, size: int = views.DEFAULT_PAGE_SIZE):
+               page: int = 1, size: int = views.DEFAULT_PAGE_SIZE, ids_only: bool = False):
     src, idx = ready()
     ids = list(idx.teams) if league is None else src.league_teams.get(league, [])
     rows = [idx.teams[i] for i in idx.search('teams', [i for i in ids if i in idx.teams], q)]
@@ -250,9 +283,7 @@ def list_teams(q: str = '', league: Optional[int] = None, kits: Optional[str] = 
     if (want := _yes_no(national)) is not None:
         rows = [r for r in rows if (r['national_team_of'] is not None) == want]
     rows = _basket_filter('teams', rows, in_basket)
-    out = views.page(rows, 'teams', sort, dir, page, size)
-    out['items'] = _with_basket('teams', out['items'])
-    return out
+    return _ids_or_page('teams', rows, ids_only, sort, dir, page, size)
 
 
 @app.get('/api/players')
@@ -261,7 +292,7 @@ def list_players(q: str = '', team: Optional[int] = None, league: Optional[int] 
                  min_overall: Optional[int] = None, max_overall: Optional[int] = None,
                  face: Optional[str] = None, in_basket: Optional[str] = None,
                  sort: Optional[str] = None, dir: Optional[str] = None,
-                 page: int = 1, size: int = views.DEFAULT_PAGE_SIZE):
+                 page: int = 1, size: int = views.DEFAULT_PAGE_SIZE, ids_only: bool = False):
     src, idx = ready()
     if team is not None:
         ids = [ln['playerid'] for ln in src.team_links.get(team, [])]
@@ -282,9 +313,7 @@ def list_players(q: str = '', team: Optional[int] = None, league: Optional[int] 
     if (want := _yes_no(face)) is not None:
         rows = [r for r in rows if r['has_face'] == want]
     rows = _basket_filter('players', rows, in_basket)
-    out = views.page(rows, 'players', sort, dir, page, size)
-    out['items'] = _with_basket('players', out['items'])
-    return out
+    return _ids_or_page('players', rows, ids_only, sort, dir, page, size)
 
 
 @app.get('/api/options')
@@ -368,6 +397,11 @@ def stadium_detail(sid: int):
     }
 
 
+def _board_name(board: dict) -> str:
+    """A board file's name (its file name without .rx3: the id of the adboards list and pictures)."""
+    return board['path'].rsplit('/', 1)[-1].rsplit('.', 1)[0]
+
+
 @app.get('/api/leagues/{lid}')
 def league_detail(lid: int):
     src, idx = ready()
@@ -383,6 +417,10 @@ def league_detail(lid: int):
         'country_row': _country_ref(idx, idx.leagues[lid]['country_id']),
         'images': list(src.league_image_paths(lid)),
         'teams': _with_basket('teams', teams),
+        # the league's own board files and whether they go (the selection tree's node; None = it has none)
+        'adboards': [{'name': _board_name(b), 'stadium': b['stadium'] or None, 'variant': b['variant']}
+                     for b in src.league_adboards(lid)],
+        'basket_boards': tree.Tree(basket.data, src).state(f'leagueboards:{lid}') if src.league_adboards(lid) else None,
         'raw': _raw(src.leagues[lid]),
     }
 
@@ -436,6 +474,8 @@ def team_detail(tid: int):
                            'picked': ln['playerid'] in picked_players, 'in_basket': ln['playerid'] in inside})
     roster.sort(key=lambda r: (r['link_position'] if r['link_position'] is not None else 99, -(r['overall'] or 0)))
 
+    t = tree.Tree(basket.data, src)
+
     def player_ref(pid):
         pid = pid if isinstance(pid, int) and pid > 0 else None
         return {'id': pid, 'name': idx.players[pid]['name']} if pid in idx.players else None
@@ -464,6 +504,12 @@ def team_detail(tid: int):
         'tactics': {k: row.get(k) for k in fifa14.TACTICS if k in row},
         'stadiums': [x for x in (idx.stadium(sid) for sid in src.team_stadiums.get(tid, [])) if x],
         'stadium_custom_name': src.stadium_custom_names.get(tid),
+        # the Others tab: the board files a patch names after the team and its ball
+        'adboards': [_board_name(b) for b in src.team_adboards(tid)],
+        'ball': ({'code': ball, 'name': (idx.equipment['balls'].get(ball) or {}).get('name')}
+                 if (ball := t.ball_code(tid)) else None),
+        # the team's parts in the basket (the selection tree's nodes): full | none, or None = the team has none
+        'basket_parts': {p: t.state(f'{p}:{tid}') if p in t.team_parts(tid) else None for p in tree.TEAM_PARTS},
         'raw': _raw(row),
     }
 
@@ -783,7 +829,7 @@ class BasketOp(BaseModel):
     args: dict[str, Any] = {}
 
 
-BASKET_OPS = {'add_equipment', 'remove_equipment', 'add_adboard', 'remove_adboard', 'add_stadium', 'remove_stadium', 'add_nation', 'remove_nation', 'add_league', 'remove_league', 'add_team', 'remove_team', 'set_team', 'pick', 'add_players',
+BASKET_OPS = {'tree', 'tree_many', 'add_equipment', 'remove_equipment', 'add_adboard', 'remove_adboard', 'add_stadium', 'remove_stadium', 'add_nation', 'remove_nation', 'add_league', 'remove_league', 'add_team', 'remove_team', 'set_team', 'pick', 'add_players',
               'remove_players', 'clear', 'set_form'}
 
 
@@ -824,6 +870,20 @@ def basket_view():
                    for i in d[kind]] for kind in views.EQUIPMENT_KIND}
     return {'nations': nations, 'leagues': leagues, 'teams': teams, 'stadiums': stadiums, 'players': players,
             'adboards': adboards, **gear, 'form': d['form'], 'counts': basket_counts()}
+
+
+@app.get('/api/tree')
+def tree_view(key: str = 'root', inside: bool = False):
+    """One node of the selection tree and the nodes right inside it (inside: also how many leagues, teams and
+    players of it go)."""
+    src, idx = ready()
+    t = tree.Tree(basket.data, src)
+    try:
+        node = tree.node_view(t, idx, key, with_inside=inside)
+        children = [tree.node_view(t, idx, k) for k in t.children(key)]
+    except ValueError:
+        raise ApiError(400, 'bad_request', key)
+    return {'node': node, 'children': children}
 
 
 # ---- saved selections ---------------------------------------------------------------------------------------------

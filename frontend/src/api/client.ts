@@ -22,6 +22,7 @@ import type {
   Status,
   TeamDetail,
   TeamRow,
+  TreeView,
 } from './types'
 
 /** Error of the backend; `message` is in the interface language when the app knows its code. */
@@ -100,6 +101,9 @@ export const api = {
   previewLook: (id: number) => get<PreviewLook>(`/api/preview/look/${id}`),
 
   basket: () => get<BasketView>('/api/basket'),
+  tree: (key: string, inside = false) => get<TreeView>(`/api/tree${query({ key, inside: inside || undefined })}`),
+  /** the ids of every row of a list that passes its filters (`path`: the list's address, as /api/players) */
+  listIds: (path: string, p: ListParams) => get<{ ids: (number | string)[] }>(`${path}${query({ ...p, page: undefined, size: undefined, sort: undefined, dir: undefined, ids_only: 'true' })}`),
   basketOp: (op: string, args: Record<string, unknown> = {}) => post<BasketCounts>('/api/basket', { op, args }),
 
   selections: () => get<SavedSelection[]>('/api/selections'),

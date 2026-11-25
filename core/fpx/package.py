@@ -26,6 +26,10 @@ EXTENSION = '.fifapkg.zip'
 class TeamPick:
     players: list[int] = field(default_factory=list)  # the roster that goes (source player ids)
     crest_no_background: bool = False  # also ship the crest with its light tile removed (and prefer it)
+    # the team's parts that go with it (each also needs its include_* option)
+    stadium: bool = True
+    ball: bool = True
+    adboards: bool = True
 
 
 @dataclass
@@ -40,6 +44,8 @@ class Selection:
     boots: list[int] = field(default_factory=list)
     gloves: list[int] = field(default_factory=list)
     balls: list[int] = field(default_factory=list)
+    league_no_adboards: list[int] = field(default_factory=list)  # leagues that go without their board files
+    no_gear: dict[int, list[str]] = field(default_factory=dict)  # player id -> kinds left out ('boot', 'glove')
 
     def player_ids(self) -> list[int]:
         out = dict.fromkeys(self.players)
@@ -218,8 +224,12 @@ class _Builder:
             table, column = gear_files.EQUIPMENT[kind][:2]
             codes = {c for c in getattr(self.sel, EQUIPMENT_LISTS[kind]) if isinstance(c, int) and c > 0}
             if self.opt.include_equipment:
-                rows = [self.src.players.get(pid) for pid in player_ids] if table == 'players' else \
-                    [self.src.teams.get(tid) for tid in team_ids]
+                if table == 'players':
+                    rows = [self.src.players.get(pid) for pid in player_ids
+                            if kind not in self.sel.no_gear.get(pid, ())]
+                else:
+                    rows = [self.src.teams.get(tid) for tid in team_ids
+                            if self.sel.teams.get(tid, TeamPick()).ball]
                 codes |= {r.get(column) for r in rows if r and isinstance(r.get(column), int) and r.get(column) > 0}
             out[kind] = sorted(codes)
         return out
@@ -255,7 +265,8 @@ class _Builder:
             'team_ids': self.src.league_teams.get(lid, []),
             'images': pictures,
             'adboards': self._adboards(self.src.league_adboards(lid), f'leagues/{lid}', f'league {lid} adboard',
-                                       ('stadium', 'variant')) if self.opt.include_adboards else [],
+                                       ('stadium', 'variant'))
+            if self.opt.include_adboards and lid not in self.sel.league_no_adboards else [],
             'raw': self.src.related_rows('leagueid', lid),
         }
 
@@ -362,7 +373,7 @@ class _Builder:
         if nation:
             self.nation_ids.add(nation)
         stadiums = self.src.team_stadiums.get(tid, [])
-        if self.opt.include_stadiums:
+        if self.opt.include_stadiums and pick.stadium:
             self.stadium_ids.update(stadiums)
         return {
             'source_id': tid,
@@ -387,7 +398,8 @@ class _Builder:
             'stadium_custom_name': self.src.stadium_custom_names.get(tid),
             'adboard_tournament_id': self.src.team_tournament(tid),
             'adboards': self._adboards(self.src.team_adboards(tid), f'teams/{tid}', f'team {tid} adboard',
-                                       ('tournament', 'stadium', 'variant')) if self.opt.include_adboards else [],
+                                       ('tournament', 'stadium', 'variant'))
+            if self.opt.include_adboards and pick.adboards else [],
             'raw': raw,
         }
 
@@ -509,7 +521,8 @@ class _Builder:
         league_ids, player_ids = list(dict.fromkeys(self.sel.leagues)), self.sel.player_ids()
         self.nation_ids.update(self.sel.nations)
         self.stadium_ids.update(self.sel.stadiums)
-        team_stadiums = ({s for tid in self.sel.teams for s in self.src.team_stadiums.get(tid, [])}
+        team_stadiums = ({s for tid, pick in self.sel.teams.items() if pick.stadium
+                          for s in self.src.team_stadiums.get(tid, [])}
                          if self.opt.include_stadiums else set())
         stadium_count = len(team_stadiums | set(self.sel.stadiums))
         board_names = list(dict.fromkeys(self.sel.adboards))

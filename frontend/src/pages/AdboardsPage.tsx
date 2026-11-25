@@ -1,5 +1,6 @@
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
+import { SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
 import type { AdboardRow } from '@/api/types'
 import { Badge, BasketCheck } from '@/components/common/detail'
 import { AdboardImage } from '@/components/common/pictures'
@@ -19,6 +20,7 @@ export function AdboardsPage() {
   const list = useListState(FILTERS)
   const { data, isFetching } = useList('adboards', list.request, api.adboards)
   const op = useBasketOp()
+  const tree = useTreeOp()
   const sortState = { sort: list.sort, dir: list.dir, update: list.update, current: data?.sort ?? '', currentDir: data?.dir ?? '' }
   const any = (v: number | null) => (v === null ? t('adboards.any') : String(v))
   const what = (b: AdboardRow) =>
@@ -52,7 +54,9 @@ export function AdboardsPage() {
       <ScrollTable>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-10" />
+            <TableHead className="w-10">
+              <SelectAllHead rows={data?.items ?? []} total={data?.total ?? 0} fetchIds={() => api.listIds('/api/adboards', list.request).then((r) => r.ids)} onPick={(ids, on) => tree.setMany(ids.map((i) => `adboard:${i}`), on ? 'all' : 'none')} />
+            </TableHead>
             <TableHead className="w-12" />
             <SortHead field="id" label={t('adboards.file')} state={sortState} />
             <SortHead field="kind" label={t('adboards.kind')} state={sortState} className="text-center" />

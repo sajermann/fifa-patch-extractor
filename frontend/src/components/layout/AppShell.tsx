@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { useStatus } from '@/state/queries'
 import { LoadingBlock } from './LoadingBlock'
 import { TrailTracker } from '@/lib/back'
+import { AdjustDialog } from '@/components/common/selectionTree'
 
 const NAV: { to: string; label: MessageKey; icon: typeof Trophy }[] = [
   { to: '/nations', label: 'nav.nations', icon: Globe },
@@ -138,6 +139,7 @@ export function AppShell() {
         <main key={pathname.split('/')[1]} className="min-h-0 flex-1 overflow-auto p-6">
           <Outlet />
         </main>
+        <AdjustDialog />
       </div>
     </div>
   )

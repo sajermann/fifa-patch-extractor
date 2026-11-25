@@ -45,6 +45,9 @@ game/<game path>                   files as the game reads them (chunked contain
   "includes_adboards": true,           // the boards of the exported teams and leagues went too
   "includes_equipment": true,          // the boots, gloves and balls of the exported players and teams went too
                                        // (the ones picked on their own go anyway)
+                                       // true does not mean every item has them: the user can leave a team's
+                                       // stadium, ball or boards, a league's boards or a player's boot or glove
+                                       // out one by one (that team's adboards are then empty, and so on)
   "credits": { "text": "…", "url": "https://…" } | null,
   "leagues": [League], "teams": [Team], "players": [Player], "nations": [Nation], "stadiums": [Stadium],
   "adboards": [Adboard],
@@ -143,13 +146,14 @@ The board files picked on their own (the ones of the exported teams and leagues 
 | `image`, `source_path`, `original?` | the picture decoded, where it was read and the file as the game reads it |
 
 A board picture is 512x1024 in the game: 16 bands of 512x64, one ad per band (top to bottom). Teams' and leagues'
-`adboards` are left empty when `includes_adboards` is false.
+`adboards` are left empty when `includes_adboards` is false, or when the user left that team's or league's boards
+out.
 
 ### Equipment (boots, gloves, balls)
 
 The boots, goalkeeper gloves and balls picked on their own, plus (when `includes_equipment` is true) the boots
 (`players.shoetypecode`) and goalkeeper gloves (`players.gkglovetypecode`) the exported players wear and the balls
-(`teams.balltype`) of the exported teams, once each (code 0 = none, left out). Missing in packages made before them:
+(`teams.balltype`) of the exported teams, once each, except the ones the user left out of a player or team (code 0 = none, left out). Missing in packages made before them:
 read as empty lists.
 
 | field | meaning |

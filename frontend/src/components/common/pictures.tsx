@@ -1,5 +1,6 @@
 import { ImageOff, Shield, User } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useToken } from "@/state/queries";
 import { cn } from "@/lib/utils";
@@ -220,6 +221,22 @@ export function AdboardImage({
       className={className}
       fallback={<ImageOff className="size-1/2" />}
     />
+  );
+}
+
+/** Board files side by side (the picture of each, tall as in the game: 16 bands, top to bottom) with their names. */
+export function AdboardFiles({ names }: { names: string[] }) {
+  return (
+    <div className="flex flex-wrap gap-4">
+      {names.map((name) => (
+        <Link key={name} to={`/adboards?q=${encodeURIComponent(name)}`} className="w-28 space-y-1 text-xs hover:underline">
+          <AdboardImage name={name} size={256} className="aspect-[1/2] w-28 rounded border object-cover" />
+          <span className="block truncate font-mono" title={name}>
+            {name}
+          </span>
+        </Link>
+      ))}
+    </div>
   );
 }
 

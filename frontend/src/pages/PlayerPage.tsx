@@ -7,10 +7,11 @@ import { Card } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/api/client'
 import type { AccessoryPlace, AccessoryPlaces, PlayerDetail } from '@/api/types'
-import { Badge, BasketButton, BasketCheck, Facts, OverallBadge, Rating, RawTable, Section } from '@/components/common/detail'
+import { Badge, BasketCheck, Facts, OverallBadge, Rating, RawTable, Section } from '@/components/common/detail'
 import { Flag, Photo } from '@/components/common/pictures'
 import { Preview3D } from '@/components/common/Preview3D'
 import { previewKit } from '@/lib/preview'
+import { DetailSelect } from '@/components/common/selectionTree'
 import { LoadingBlock } from '@/components/layout/LoadingBlock'
 import { hasMessage, useI18n, type MessageKey } from '@/i18n'
 import { useTab } from '@/lib/tabs'
@@ -62,11 +63,7 @@ export function PlayerPage() {
             ID {data.id}
           </span>
         </div>
-        <BasketButton
-          inside={data.in_basket}
-          busy={op.isPending}
-          onToggle={() => op.mutate({ op: data.in_basket ? 'remove_players' : 'add_players', args: { ids: [id] } })}
-        />
+        <DetailSelect row={data} onRemove={() => op.mutateAsync({ op: 'remove_players', args: { ids: [id] } })} />
       </div>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>

@@ -1,11 +1,12 @@
 import { useNavigate } from 'react-router-dom'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
-import { BasketCheck, OverallBadge } from '@/components/common/detail'
+import { RowSelect, SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
+import { OverallBadge } from '@/components/common/detail'
 import { ColorDot, Crest } from '@/components/common/pictures'
 import { useI18n } from '@/i18n'
 import { FilterBar, FilterSelect, LIST_PAGE, Pager, ScrollTable, SearchInput, SortHead, useListState } from '@/lib/list'
-import { useBasketOp, useList, useOptions } from '@/state/queries'
+import { useList, useOptions } from '@/state/queries'
 import { BasketFilter } from './LeaguesPage'
 import { usePageLabel } from '@/lib/back'
 
@@ -18,7 +19,7 @@ export function TeamsPage() {
   const list = useListState(FILTERS)
   const { data, isFetching } = useList('teams', list.request, api.teams)
   const options = useOptions().data
-  const op = useBasketOp()
+  const tree = useTreeOp()
   const sortState = { sort: list.sort, dir: list.dir, update: list.update, current: data?.sort ?? '', currentDir: data?.dir ?? '' }
   return (
     <div className={LIST_PAGE}>
@@ -39,7 +40,9 @@ export function TeamsPage() {
       <ScrollTable>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-10" />
+            <TableHead className="w-10">
+              <SelectAllHead rows={data?.items ?? []} total={data?.total ?? 0} fetchIds={() => api.listIds('/api/teams', list.request).then((r) => r.ids)} onPick={(ids, on) => tree.setMany(ids.map((i) => `team:${i}`), on ? 'all' : 'none')} />
+            </TableHead>
             <TableHead className="w-12" />
             <SortHead field="name" label={t('col.name')} state={sortState} />
             <SortHead field="league" label={t('col.league')} state={sortState} className="text-right" />
@@ -54,11 +57,7 @@ export function TeamsPage() {
           {data?.items.map((tm) => (
             <TableRow key={tm.id} className="cursor-pointer" onClick={() => navigate(`/teams/${tm.id}`)}>
               <TableCell>
-                <BasketCheck
-                  checked={tm.in_basket}
-                  label={tm.in_basket ? t('basket.remove') : t('basket.add')}
-                  onChange={(v) => op.mutate({ op: v ? 'add_team' : 'remove_team', args: { id: tm.id } })}
-                />
+                <RowSelect row={tm} />
               </TableCell>
               <TableCell>
                 <Crest id={tm.id} size={64} available={tm.has_crest} className="size-8" />

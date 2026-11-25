@@ -4,17 +4,18 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
-import { BasketButton, BasketCheck, Facts, OverallBadge, RawTable, Section } from '@/components/common/detail'
+import { Facts, OverallBadge, RawTable, Section } from '@/components/common/detail'
 import { LanguageNames } from '@/components/common/names'
-import { Crest, Flag, LeagueImage } from '@/components/common/pictures'
+import { AdboardFiles, Crest, Flag, LeagueImage } from '@/components/common/pictures'
+import { DetailSelect, PartToggle, RowSelect, SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
 import { LoadingBlock } from '@/components/layout/LoadingBlock'
 import { useI18n } from '@/i18n'
 import { useTab } from '@/lib/tabs'
-import { useBasketOp, useToken } from '@/state/queries'
+import { useToken } from '@/state/queries'
 import { BackButton, usePageLabel } from '@/lib/back'
 import { useConfederationName } from './NationsPage'
 
-const TABS = ['data', 'countries', 'teams', 'raw'] as const
+const TABS = ['data', 'countries', 'teams', 'adboards', 'raw'] as const
 // the name columns in the FIFA 14 Studio's order (short ones first)
 const NAME_COLUMNS = ['abbr', 'abbr15', 'full', 'trophy_abbr15', 'trophy']
 
@@ -22,12 +23,12 @@ const NAME_COLUMNS = ['abbr', 'abbr15', 'full', 'trophy_abbr15', 'trophy']
  * never scrolls: each box takes the height left and scrolls inside. */
 export function LeaguePage() {
   const { t } = useI18n()
+  const tree = useTreeOp()
   const id = Number(useParams().id)
   const token = useToken()
   const navigate = useNavigate()
   const { data, error } = useQuery({ queryKey: ['league', token, id], queryFn: () => api.league(id), enabled: !!token })
   usePageLabel(data?.name)
-  const op = useBasketOp()
   const confederation = useConfederationName()
   const [tab, setTab] = useTab(TABS)
   if (error) return <p className="text-destructive">{error.message}</p>
@@ -52,18 +53,16 @@ export function LeaguePage() {
             {[data.level !== null ? t('leagues.level', { level: data.level }) : null, `ID ${data.id}`].filter(Boolean).join(' · ')}
           </span>
         </div>
-        <BasketButton
-          inside={data.in_basket}
-          busy={op.isPending}
-          labels={{ add: t('leagues.addWithTeams'), remove: t('basket.remove') }}
-          onToggle={() => op.mutate({ op: data.in_basket ? 'remove_league' : 'add_league', args: { id } })}
-        />
+        <DetailSelect row={data} />
       </div>
       <Tabs value={tab} onValueChange={setTab} className="flex min-h-0 flex-1 flex-col">
         <TabsList>
           <TabsTrigger value="data">{t('tab.data')}</TabsTrigger>
           <TabsTrigger value="countries">{t('section.countriesCount', { count: country ? 1 : 0 })}</TabsTrigger>
           <TabsTrigger value="teams">{t('section.teamsCount', { count: data.teams.length })}</TabsTrigger>
+          <TabsTrigger value="adboards">
+            {t('tab.adboard')} ({data.adboards.length})
+          </TabsTrigger>
           <TabsTrigger value="raw">{t('tab.raw')}</TabsTrigger>
         </TabsList>
         <TabsContent value="data" className="flex min-h-0 flex-1 flex-col gap-4">
@@ -97,23 +96,27 @@ export function LeaguePage() {
               <Table>
                 <TableHeader className="sticky top-0 z-10 shadow-[0_1px_0_var(--border)] [&_th]:bg-card">
                   <TableRow>
-                    <TableHead className="w-12" />
-                    <TableHead>{t('col.name')}</TableHead>
+                    <TableHead className="w-10">
+                      <SelectAllHead rows={[country]} total={1} onPick={(ids, on) => tree.setMany(ids.map((i) => `nation:${i}`), on ? 'all' : 'none')} />
+                    </TableHead>
+                    <TableHead className="w-12 min-w-12" />
+                    <TableHead className="w-full">{t('col.name')}</TableHead>
                     <TableHead className="text-right">{t('col.confederation')}</TableHead>
                     <TableHead className="w-28 text-center">{t('col.leagues')}</TableHead>
-                    <TableHead className="w-28 text-center">{t('col.players')}</TableHead>
                     <TableHead className="w-28">{t('col.id')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   <TableRow className="cursor-pointer" onClick={() => navigate(`/nations/${country.id}`)}>
                     <TableCell>
+                      <RowSelect row={country} />
+                    </TableCell>
+                    <TableCell>
                       <Flag id={country.id} size={64} available={country.has_flag} className="h-5 w-8" fallback={<FlagIcon className="size-4" />} />
                     </TableCell>
                     <TableCell className="font-medium">{country.name}</TableCell>
                     <TableCell className="text-right">{confederation(country.confederation)}</TableCell>
                     <TableCell className="text-center tabular-nums">{country.league_count}</TableCell>
-                    <TableCell className="text-center tabular-nums">{country.player_count}</TableCell>
                     <TableCell className="text-muted-foreground tabular-nums">{country.id}</TableCell>
                   </TableRow>
                 </TableBody>
@@ -128,9 +131,11 @@ export function LeaguePage() {
             <Table>
               <TableHeader className="sticky top-0 z-10 shadow-[0_1px_0_var(--border)] [&_th]:bg-card">
                 <TableRow>
-                  <TableHead className="w-10" />
-                  <TableHead className="w-10" />
-                  <TableHead>{t('col.name')}</TableHead>
+                  <TableHead className="w-10">
+                    <SelectAllHead rows={data.teams} total={data.teams.length} onPick={(ids, on) => tree.setMany(ids.map((i) => `team:${i}`), on ? 'all' : 'none')} />
+                  </TableHead>
+                  <TableHead className="w-10 min-w-10" />
+                  <TableHead className="w-full">{t('col.name')}</TableHead>
                   <TableHead className="w-28 text-center">{t('col.overall')}</TableHead>
                   <TableHead className="w-28 text-center">{t('col.players')}</TableHead>
                   <TableHead className="w-28 text-center">{t('col.kits')}</TableHead>
@@ -140,14 +145,10 @@ export function LeaguePage() {
                 {data.teams.map((tm) => (
                   <TableRow key={tm.id} className="cursor-pointer" onClick={() => navigate(`/teams/${tm.id}`)}>
                     <TableCell>
-                      <BasketCheck
-                        checked={tm.in_basket}
-                        label={tm.in_basket ? t('basket.remove') : t('basket.add')}
-                        onChange={(v) => op.mutate({ op: v ? 'add_team' : 'remove_team', args: { id: tm.id } })}
-                      />
+                      <RowSelect row={tm} />
                     </TableCell>
                     <TableCell>
-                      <Crest id={tm.id} size={64} available={tm.has_crest} className="size-7" />
+                      <Crest id={tm.id} size={64} available={tm.has_crest} className="size-7 shrink-0" />
                     </TableCell>
                     <TableCell>
                       <Link to={`/teams/${tm.id}`} className="font-medium hover:underline" onClick={(e) => e.stopPropagation()}>
@@ -163,6 +164,15 @@ export function LeaguePage() {
                 ))}
               </TableBody>
             </Table>
+          </Section>
+        </TabsContent>
+        <TabsContent value="adboards">
+          <Section
+            title={t('adboard.title')}
+            description={t('adboard.leagueFiles')}
+            action={<PartToggle nodeKey={`leagueboards:${data.id}`} state={data.basket_boards} label={t('part.inPackage')} />}
+          >
+            {data.adboards.length ? <AdboardFiles names={data.adboards.map((b) => b.name)} /> : <p className="text-sm text-muted-foreground">{t('adboard.none')}</p>}
           </Section>
         </TabsContent>
         <TabsContent value="raw" className="flex min-h-0 flex-1 flex-col">

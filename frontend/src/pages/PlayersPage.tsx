@@ -2,7 +2,8 @@ import { ScanFace } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
-import { Badge, BasketCheck, OverallBadge } from '@/components/common/detail'
+import { RowSelect, SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
+import { Badge, OverallBadge } from '@/components/common/detail'
 import { Flag, Photo } from '@/components/common/pictures'
 import { useI18n } from '@/i18n'
 import { FilterBar, FilterSelect, LIST_PAGE, Pager, ScrollTable, SearchInput, SortHead, useListState } from '@/lib/list'
@@ -20,6 +21,7 @@ export function PlayersPage() {
   const { data, isFetching } = useList('players', list.request, api.players)
   const options = useOptions().data
   const op = useBasketOp()
+  const tree = useTreeOp()
   const sortState = { sort: list.sort, dir: list.dir, update: list.update, current: data?.sort ?? '', currentDir: data?.dir ?? '' }
   return (
     <div className={LIST_PAGE}>
@@ -55,7 +57,9 @@ export function PlayersPage() {
       <ScrollTable>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-10" />
+            <TableHead className="w-10">
+              <SelectAllHead rows={data?.items ?? []} total={data?.total ?? 0} fetchIds={() => api.listIds('/api/players', list.request).then((r) => r.ids)} onPick={(ids, on) => (on ? tree.setMany(ids.map((i) => `player:0:${i}`), 'all') : op.mutateAsync({ op: 'remove_players', args: { ids } }))} />
+            </TableHead>
             <TableHead className="w-12" />
             <SortHead field="name" label={t('col.name')} state={sortState} />
             <SortHead field="team" label={t('col.team')} state={sortState} className="text-right" />
@@ -70,11 +74,7 @@ export function PlayersPage() {
           {data?.items.map((p) => (
             <TableRow key={p.id} className="cursor-pointer" onClick={() => navigate(`/players/${p.id}`)}>
               <TableCell>
-                <BasketCheck
-                  checked={p.in_basket}
-                  label={p.in_basket ? t('basket.remove') : t('basket.add')}
-                  onChange={(v) => op.mutate({ op: v ? 'add_players' : 'remove_players', args: { ids: [p.id] } })}
-                />
+                <RowSelect row={p} onRemove={() => op.mutateAsync({ op: 'remove_players', args: { ids: [p.id] } })} />
               </TableCell>
               <TableCell>
                 <Photo id={p.id} size={64} available={p.has_photo} className="size-9 rounded" />

@@ -44,7 +44,7 @@ export function useBasketOp() {
     mutationFn: ({ op, args }: { op: string; args?: Record<string, unknown> }) => api.basketOp(op, args),
     onSuccess: (counts: BasketCounts) => {
       qc.setQueryData(['status'], (s: unknown) => (s && typeof s === 'object' ? { ...s, basket: counts } : s))
-      for (const key of ['boots', 'gloves', 'balls', 'adboards', 'stadiums', 'nations', 'leagues', 'teams', 'players', 'stadium', 'nation', 'league', 'team', 'player', 'basket']) void qc.invalidateQueries({ queryKey: [key] })
+      for (const key of ['boots', 'gloves', 'balls', 'adboards', 'stadiums', 'nations', 'leagues', 'teams', 'players', 'stadium', 'nation', 'league', 'team', 'player', 'basket', 'tree']) void qc.invalidateQueries({ queryKey: [key] })
     },
     onError: (e: Error) => toast.error(e.message),
   })

@@ -5,6 +5,7 @@ Everything here describes the source game as it is. Nothing is adapted to any ot
 import datetime
 import os
 import re
+import threading
 from functools import cached_property
 
 from . import t3db
@@ -34,6 +35,20 @@ LEAGUE_NAME_STRINGS = {
 NATION_NAME_STRINGS = {'full': 'NationName_', 'abbr3': 'nationname_abbr3_'}
 STADIUM_NAME_STRINGS = {'full': 'StadiumName_'}
 # the names read in every language (screens of a country and a league): {kind: (keys, string id prefixes)}
+def _split_names(strings: dict[str, str], table: dict) -> dict[int, dict[str, str]]:
+    """{id: {key: text}} of the strings whose id is one of the table's prefixes plus a number."""
+    prefixes = sorted(table.items(), key=lambda kv: -len(kv[1]))  # longest first: Abbr15 before ''
+    out: dict[int, dict[str, str]] = {}
+    for sid, text in strings.items():
+        for key, prefix in prefixes:
+            rest = sid[len(prefix):]
+            if sid.startswith(prefix) and rest.isdigit():
+                if text:
+                    out.setdefault(int(rest), {})[key] = text
+                break
+    return out
+
+
 LANGUAGE_NAME_KINDS = {'team': (TEAM_NAME_STRINGS, ('TeamName_', 'CT_TeamName_')),
                        'nation': (NATION_NAME_STRINGS, ('NationName_', 'nationname_abbr3_')),
                        'league': (LEAGUE_NAME_STRINGS, ('LeagueName_', 'Labbr_', 'TrophyName_')),
@@ -195,6 +210,7 @@ class Fifa14Source:
         self._index()
         self.warnings: list[str] = []  # language databases that could not be read
         self._names_by_language: dict[str, dict[str, dict[int, dict[str, str]]]] = {}
+        self._names_lock = threading.Lock()  # the names in every language are read once (a thread may be at it)
         self.team_names = self._names(TEAM_NAME_STRINGS, ('TeamName_', 'CT_TeamName_'))
         self.league_names = self._names(LEAGUE_NAME_STRINGS, ('LeagueName_', 'Labbr_', 'TrophyName_'))
         self.nation_names = self._names(NATION_NAME_STRINGS, ('NationName_', 'nationname_abbr3_'))
@@ -291,20 +307,37 @@ class Fifa14Source:
 
     def language_names(self, kind: str, oid: int) -> dict[str, dict[str, str]]:
         """{key: {language: text}} of a team, country, league or stadium (`kind` 'team' / 'nation' / 'league' /
-        'stadium') in every language database of the game (each kind is read once, on demand)."""
+        'stadium') in every language database of the game (read once, see load_language_names)."""
         if kind not in self._names_by_language:
-            table, starts = LANGUAGE_NAME_KINDS[kind]
-            self._names_by_language[kind] = {lang: self._names(table, starts, lang) for lang in self.languages()}
+            self.load_language_names()
         out: dict[str, dict[str, str]] = {}
         for lang, names in self._names_by_language[kind].items():
             for key, text in names.get(oid, {}).items():
                 out.setdefault(key, {})[lang] = text
         return out
 
+    def load_language_names(self) -> None:
+        """Reads the names of teams, countries, leagues and stadiums in every language database of the game, each
+        database once for the four kinds (reading one is slow: the backend does it in the background after loading)."""
+        with self._names_lock:
+            missing = [k for k in LANGUAGE_NAME_KINDS if k not in self._names_by_language]
+            if not missing:
+                return
+            starts = tuple(s for k in missing for s in LANGUAGE_NAME_KINDS[k][1])
+            per_language = {lang: self._strings(lang, starts) for lang in self.languages()}
+            for kind in missing:
+                table, own = LANGUAGE_NAME_KINDS[kind]
+                self._names_by_language[kind] = {
+                    lang: _split_names({sid: text for sid, text in strings.items() if sid.startswith(own)}, table)
+                    for lang, strings in per_language.items()}
+
     def _names(self, table: dict, starts: tuple, language: str | None = None) -> dict[int, dict[str, str]]:
         """{id: {key: text}} of the language database (the chosen one unless `language` is given); the _upd database
         overrides the base one."""
-        language = language or self.language
+        return _split_names(self._strings(language or self.language, starts), table)
+
+    def _strings(self, language: str, starts: tuple) -> dict[str, str]:
+        """{string id: text} of the language database whose ids start with one of `starts` (_upd overrides)."""
         strings = {}
         for name in (language, f'{language}_upd'):
             raw = self.files.read(f'data/loc/{name}.db')
@@ -314,16 +347,7 @@ class Fifa14Source:
                 strings.update(t3db.read_strings(raw, lambda sid: sid.startswith(starts)))
             except t3db.DatabaseError as e:
                 self.warnings.append(f'data/loc/{name}.db: {e}')
-        prefixes = sorted(table.items(), key=lambda kv: -len(kv[1]))  # longest first: Abbr15 before ''
-        out: dict[int, dict[str, str]] = {}
-        for sid, text in strings.items():
-            for key, prefix in prefixes:
-                rest = sid[len(prefix):]
-                if sid.startswith(prefix) and rest.isdigit():
-                    if text:
-                        out.setdefault(int(rest), {})[key] = text
-                    break
-        return out
+        return strings
 
     # ---- names --------------------------------------------------------------------------------------------
 

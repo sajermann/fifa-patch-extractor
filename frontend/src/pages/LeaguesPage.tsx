@@ -1,11 +1,11 @@
 import { useNavigate } from 'react-router-dom'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
-import { BasketCheck } from '@/components/common/detail'
+import { RowSelect, SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
 import { LeagueImage } from '@/components/common/pictures'
 import { useI18n } from '@/i18n'
 import { FilterBar, FilterSelect, LIST_PAGE, Pager, ScrollTable, SearchInput, SortHead, useListState } from '@/lib/list'
-import { useBasketOp, useList, useOptions } from '@/state/queries'
+import { useList, useOptions } from '@/state/queries'
 import { usePageLabel } from '@/lib/back'
 
 const FILTERS = ['q', 'country', 'level', 'in_basket'] as const
@@ -17,7 +17,7 @@ export function LeaguesPage() {
   const list = useListState(FILTERS)
   const { data, isFetching } = useList('leagues', list.request, api.leagues)
   const options = useOptions().data
-  const op = useBasketOp()
+  const tree = useTreeOp()
   const sortState = { sort: list.sort, dir: list.dir, update: list.update, current: data?.sort ?? '', currentDir: data?.dir ?? '' }
   return (
     <div className={LIST_PAGE}>
@@ -44,12 +44,15 @@ export function LeaguesPage() {
       <ScrollTable>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-10" />
+            <TableHead className="w-10">
+              <SelectAllHead rows={data?.items ?? []} total={data?.total ?? 0} fetchIds={() => api.listIds('/api/leagues', list.request).then((r) => r.ids)} onPick={(ids, on) => tree.setMany(ids.map((i) => `league:${i}`), on ? 'all' : 'none')} />
+            </TableHead>
             <TableHead className="w-12" />
             <SortHead field="name" label={t('col.name')} state={sortState} />
             <SortHead field="country" label={t('col.country')} state={sortState} className="text-right" />
             <SortHead field="level" label={t('col.level')} state={sortState} className="text-center" />
             <SortHead field="team_count" label={t('col.teams')} state={sortState} className="text-center" />
+            <SortHead field="adboard_count" label={t('col.adboards')} state={sortState} className="text-center" />
             <SortHead field="id" label={t('col.id')} state={sortState} />
           </TableRow>
         </TableHeader>
@@ -57,11 +60,7 @@ export function LeaguesPage() {
           {data?.items.map((l) => (
             <TableRow key={l.id} className="cursor-pointer" onClick={() => navigate(`/leagues/${l.id}`)}>
               <TableCell>
-                <BasketCheck
-                  checked={l.in_basket}
-                  label={l.in_basket ? t('basket.remove') : t('basket.add')}
-                  onChange={(v) => op.mutate({ op: v ? 'add_league' : 'remove_league', args: { id: l.id } })}
-                />
+                <RowSelect row={l} />
               </TableCell>
               <TableCell>
                 <LeagueImage id={l.id} size={64} available={l.has_logo} className="size-8" />
@@ -73,12 +72,13 @@ export function LeaguesPage() {
               <TableCell className="text-right">{l.country ?? '—'}</TableCell>
               <TableCell className="text-center tabular-nums">{l.level ?? '—'}</TableCell>
               <TableCell className="text-center tabular-nums">{l.team_count}</TableCell>
+              <TableCell className="text-center tabular-nums">{l.adboard_count || '—'}</TableCell>
               <TableCell className="text-muted-foreground tabular-nums">{l.id}</TableCell>
             </TableRow>
           ))}
           {data && data.items.length === 0 && (
             <TableRow>
-              <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+              <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                 {t('list.empty')}
               </TableCell>
             </TableRow>

@@ -10,7 +10,7 @@ import uuid
 
 from fpx import fifa14, package
 
-from . import settings
+from . import settings, tree
 from .views import EQUIPMENT_KIND as EQUIPMENT_LISTS, Index
 
 log = logging.getLogger('fpxapi')
@@ -77,6 +77,18 @@ class SourceHolder:
             self.loaded_at = time.time()
             self.token = uuid.uuid4().hex[:8]
         log.info('loaded %s in %.1f s', path, time.time() - started)
+        # the names in every language (the Names tabs): slow to read, so in the background before anyone asks
+        threading.Thread(target=self._language_names, args=(src,), daemon=True).start()
+
+    @staticmethod
+    def _language_names(src: fifa14.Fifa14Source) -> None:
+        started = time.time()
+        try:
+            src.load_language_names()
+        except Exception:  # noqa: BLE001 - a screen that needs them reads them again (and fails there)
+            log.exception('reading the names in every language failed')
+            return
+        log.info('names in every language read in %.1f s', time.time() - started)
 
     def status(self) -> dict:
         out = {'state': self.state, 'path': self.path, 'error': self.error, 'token': self.token}
@@ -101,9 +113,10 @@ class SourceHolder:
 def empty_basket() -> dict:
     """nations: [ids]; leagues: [ids]; teams: {"<id>": {"players": [ids], "crest_no_background": bool}}; players:
     [ids] that go without a team; stadiums: [ids] picked on their own; adboards: [board file names] picked on their
-    own; boots, gloves, balls: [codes] picked on their own; form: the export screen's fields."""
+    own; boots, gloves, balls: [codes] picked on their own; off: the parts left out of a team, league or player
+    (see tree.py); form: the export screen's fields."""
     return {'nations': [], 'leagues': [], 'teams': {}, 'players': [], 'stadiums': [], 'adboards': [],
-            'boots': [], 'gloves': [], 'balls': [],
+            'boots': [], 'gloves': [], 'balls': [], 'off': {},
             'form': {'patch_name': '', 'credits': '', 'credits_url': '', 'include_originals': True,
                      'include_stadiums': True, 'include_adboards': True, 'include_equipment': True}}
 
@@ -131,8 +144,17 @@ class Basket:
             out['adboards'] = [i for i in data.get('adboards', []) if isinstance(i, str)]  # missing in older baskets
             for kind in EQUIPMENT_LISTS:  # missing in older baskets
                 out[kind] = [i for i in data.get(kind, []) if isinstance(i, int) and not isinstance(i, bool)]
+            off = data.get('off')  # missing in older baskets
+            if isinstance(off, dict):
+                for k, v in off.items():
+                    allowed = {'team': tree.TEAM_PARTS, 'league': ('adboards',), 'player': tree.PLAYER_PARTS}.get(
+                        str(k).partition(':')[0], ())
+                    parts = [p for p in v if p in allowed] if isinstance(v, list) else []
+                    if parts and str(k).partition(':')[2].isdigit():
+                        out['off'][str(k)] = parts
             if isinstance(data.get('form'), dict):
                 out['form'].update({k: v for k, v in data['form'].items() if k in out['form']})
+        _absorb_include_flags(out)
         return out
 
     def save(self) -> None:
@@ -255,6 +277,16 @@ class Basket:
         for team in self.data['teams'].values():
             team['players'] = [p for p in team['players'] if p not in gone]
 
+    def _op_tree(self, src, key: str, mode: str):
+        """A click in the selection tree (or a list's checkbox): see tree.set_node."""
+        tree.set_node(self.data, self._need(src), key, mode)
+
+    def _op_tree_many(self, src, keys: list[str], mode: str):
+        if not isinstance(keys, list):
+            raise ValueError('keys')
+        for key in keys:
+            tree.set_node(self.data, self._need(src), key, mode)
+
     def _op_clear(self, src):
         form = self.data['form']
         self.data = empty_basket()
@@ -274,15 +306,41 @@ class Basket:
         return out
 
     def selection(self) -> package.Selection:
+        off = self.data['off']
         return package.Selection(
             nations=list(self.data['nations']),
             leagues=list(self.data['leagues']),
-            teams={int(k): package.TeamPick(list(v['players']), v['crest_no_background'])
+            teams={int(k): package.TeamPick(list(v['players']), v['crest_no_background'],
+                                            **{p: p not in off.get(f'team:{k}', []) for p in tree.TEAM_PARTS})
                    for k, v in self.data['teams'].items()},
+            league_no_adboards=[int(k[7:]) for k, v in off.items() if k.startswith('league:') and 'adboards' in v],
+            no_gear={int(k[7:]): list(v) for k, v in off.items() if k.startswith('player:')},
             players=list(self.data['players']),
             stadiums=list(self.data['stadiums']),
             adboards=list(self.data['adboards']),
             **{kind: list(self.data[kind]) for kind in EQUIPMENT_LISTS})
+
+
+def _absorb_include_flags(basket: dict) -> None:
+    """Older baskets left the stadiums, board files or equipment of every item out with one switch of the export
+    screen; now each team, league and player says it (`off`). A switch that is off becomes the same parts left out
+    of the items the basket has, and goes back on."""
+    form = basket['form']
+    players = set(basket['players']) | {p for v in basket['teams'].values() for p in v['players']}
+    turned_off = {
+        'include_stadiums': [(f'team:{t}', 'stadium') for t in basket['teams']],
+        'include_adboards': [(f'team:{t}', 'adboards') for t in basket['teams']]
+        + [(f'league:{lid}', 'adboards') for lid in basket['leagues']],
+        'include_equipment': [(f'team:{t}', 'ball') for t in basket['teams']]
+        + [(f'player:{p}', k) for p in sorted(players) for k in tree.PLAYER_PARTS],
+    }
+    for flag, parts in turned_off.items():
+        if form.get(flag) is False:
+            for owner, part in parts:
+                current = basket['off'].setdefault(owner, [])
+                if part not in current:
+                    current.append(part)
+            form[flag] = True
 
 
 # ---- saved selections -------------------------------------------------------------------------------------------

@@ -4,13 +4,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
-import { Badge, BasketButton, BasketCheck, Facts, RawTable, Section } from '@/components/common/detail'
+import { Badge, Facts, RawTable, Section } from '@/components/common/detail'
 import { Flag, LeagueImage } from '@/components/common/pictures'
 import { LanguageNames } from '@/components/common/names'
+import { DetailSelect, RowSelect, SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
 import { LoadingBlock } from '@/components/layout/LoadingBlock'
 import { hasMessage, useI18n, type MessageKey } from '@/i18n'
 import { useTab } from '@/lib/tabs'
-import { useBasketOp, useToken } from '@/state/queries'
+import { useToken } from '@/state/queries'
 import { useConfederationName } from './NationsPage'
 import { BackButton, usePageLabel } from '@/lib/back'
 
@@ -19,12 +20,12 @@ const TABS = ['overview', 'leagues', 'raw'] as const
 
 export function NationPage() {
   const { t } = useI18n()
+  const tree = useTreeOp()
   const id = Number(useParams().id)
   const token = useToken()
   const navigate = useNavigate()
   const { data, error } = useQuery({ queryKey: ['nation', token, id], queryFn: () => api.nation(id), enabled: !!token })
   usePageLabel(data?.name)
-  const op = useBasketOp()
   const confederation = useConfederationName()
   const [tab, setTab] = useTab(TABS)
   if (error) return <p className="text-destructive">{error.message}</p>
@@ -39,12 +40,7 @@ export function NationPage() {
           <span className="shrink-0 text-sm text-muted-foreground tabular-nums">ID {data.id}</span>
           <span className="shrink-0 text-sm text-muted-foreground">{confederation(data.confederation)}</span>
         </div>
-        <BasketButton
-          inside={data.in_basket}
-          busy={op.isPending}
-          labels={{ add: t('nations.addWithLeagues'), remove: t('basket.remove') }}
-          onToggle={() => op.mutate({ op: data.in_basket ? 'remove_nation' : 'add_nation', args: { id } })}
-        />
+        <DetailSelect row={data} />
       </div>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
@@ -106,35 +102,35 @@ export function NationPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-10" />
-                    <TableHead className="w-10" />
-                    <TableHead>{t('col.name')}</TableHead>
-                    <TableHead>{t('col.level')}</TableHead>
-                    <TableHead>{t('col.teams')}</TableHead>
-                    <TableHead>{t('col.id')}</TableHead>
+                    <TableHead className="w-10">
+                      <SelectAllHead rows={data.leagues} total={data.leagues.length} onPick={(ids, on) => tree.setMany(ids.map((i) => `league:${i}`), on ? 'all' : 'none')} />
+                    </TableHead>
+                    <TableHead className="w-10 min-w-12" />
+                    <TableHead className="w-full">{t('col.name')}</TableHead>
+                    <TableHead className="text-right">{t('col.level')}</TableHead>
+                    <TableHead className="text-center">{t('col.teams')}</TableHead>
+                    <TableHead className="text-center">{t('col.adboards')}</TableHead>
+                    <TableHead className="text-left">{t('col.id')}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {data.leagues.map((l) => (
                     <TableRow key={l.id} className="cursor-pointer" onClick={() => navigate(`/leagues/${l.id}`)}>
                       <TableCell>
-                        <BasketCheck
-                          checked={l.in_basket}
-                          label={l.in_basket ? t('basket.remove') : t('basket.add')}
-                          onChange={(v) => op.mutate({ op: v ? 'add_league' : 'remove_league', args: { id: l.id } })}
-                        />
+                        <RowSelect row={l} />
                       </TableCell>
                       <TableCell>
-                        <LeagueImage id={l.id} size={64} available={l.has_logo} className="size-7" />
+                        <LeagueImage id={l.id} size={64} available={l.has_logo} className="size-7 shrink-0" />
                       </TableCell>
                       <TableCell>
                         <Link to={`/leagues/${l.id}`} className="font-medium hover:underline" onClick={(e) => e.stopPropagation()}>
                           {l.name}
                         </Link>
                       </TableCell>
-                      <TableCell className="tabular-nums">{l.level ?? '—'}</TableCell>
-                      <TableCell className="tabular-nums">{l.team_count}</TableCell>
-                      <TableCell className="text-muted-foreground tabular-nums">{l.id}</TableCell>
+                      <TableCell className="text-right tabular-nums">{l.level ?? '—'}</TableCell>
+                      <TableCell className="text-center tabular-nums">{l.team_count}</TableCell>
+                      <TableCell className="text-center tabular-nums">{l.adboard_count || '—'}</TableCell>
+                      <TableCell className="text-left text-muted-foreground tabular-nums">{l.id}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

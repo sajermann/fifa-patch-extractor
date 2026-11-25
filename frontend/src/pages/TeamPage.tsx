@@ -10,12 +10,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { api } from '@/api/client'
 import type { KitInfo, RGB, RosterRow, StadiumInfo, TeamDetail } from '@/api/types'
-import { Badge, BasketButton, BasketCheck, Facts, FillScroll, OverallBadge, RawTable, Section } from '@/components/common/detail'
-import { ColorDot, Crest, KitImage, LeagueImage, Photo } from '@/components/common/pictures'
+import { Badge, BasketCheck, Facts, FillScroll, OverallBadge, RawTable, Section } from '@/components/common/detail'
+import { AdboardFiles, ColorDot, Crest, EquipmentImage, KitImage, LeagueImage, Photo } from '@/components/common/pictures'
 import { LanguageNames } from '@/components/common/names'
 import { FormationPitch } from '@/components/common/FormationPitch'
 import { Preview3D } from '@/components/common/Preview3D'
 import { Stadium3D, StadiumDetails } from '@/components/common/stadium'
+import { DetailSelect, PartToggle, RowSelect, SelectAllHead, TreeBox, useTreeOp } from '@/components/common/selectionTree'
 import { LoadingBlock } from '@/components/layout/LoadingBlock'
 import { hasMessage, useI18n, type MessageKey } from '@/i18n'
 import { previewKit } from '@/lib/preview'
@@ -24,7 +25,7 @@ import { cn } from '@/lib/utils'
 import { useBasketOp, useToken } from '@/state/queries'
 import { BackButton, usePageLabel } from '@/lib/back'
 
-const TABS = ['data', 'crest', 'kits', 'leagues', 'roster', 'stadium', 'raw'] as const
+const TABS = ['data', 'crest', 'kits', 'leagues', 'roster', 'stadium', 'other', 'raw'] as const
 // the name columns in the FIFA 14 Studio's order
 const NAME_COLUMNS = ['full', 'abbr15', 'abbr10', 'abbr7', 'abbr3', 'commentary']
 
@@ -55,7 +56,6 @@ export function TeamPage() {
   const token = useToken()
   const { data, error } = useQuery({ queryKey: ['team', token, id], queryFn: () => api.team(id), enabled: !!token })
   usePageLabel(data?.name)
-  const op = useBasketOp()
   const [tab, setTab] = useTab(TABS)
   if (error) return <p className="text-destructive">{error.message}</p>
   if (!data) return <LoadingBlock />
@@ -82,12 +82,7 @@ export function TeamPage() {
           </span>
           {data.in_basket && <span className="shrink-0 text-sm">{t('teams.inBasketPlayers', { count: data.basket_players, total: data.player_count })}</span>}
         </div>
-        <BasketButton
-          inside={data.in_basket}
-          busy={op.isPending}
-          labels={{ add: t('teams.addWithRoster'), remove: t('basket.remove') }}
-          onToggle={() => op.mutate({ op: data.in_basket ? 'remove_team' : 'add_team', args: { id } })}
-        />
+        <DetailSelect row={data} />
       </div>
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
@@ -97,6 +92,7 @@ export function TeamPage() {
           <TabsTrigger value="leagues">{t('section.leaguesCount', { count: data.league_rows.length })}</TabsTrigger>
           <TabsTrigger value="roster">{t('tab.roster', { count: data.roster.length })}</TabsTrigger>
           <TabsTrigger value="stadium">{t('tab.stadium')}</TabsTrigger>
+          <TabsTrigger value="other">{t('tab.other')}</TabsTrigger>
           <TabsTrigger value="raw">{t('tab.raw')}</TabsTrigger>
         </TabsList>
         <TabsContent value="data">
@@ -116,6 +112,10 @@ export function TeamPage() {
         </TabsContent>
         <TabsContent value="stadium">
           <Stadiums data={data} />
+        </TabsContent>
+        {/* what else the team takes into its matches: its advertising board and its ball (as the FIFA 14 Studio) */}
+        <TabsContent value="other">
+          <OtherTab data={data} />
         </TabsContent>
         <TabsContent value="raw">
           <Section title={t('section.rawRow', { table: 'teams' })}>
@@ -238,17 +238,22 @@ function CrestTab({ data }: { data: TeamDetail }) {
 function LeaguesTab({ data }: { data: TeamDetail }) {
   const { t } = useI18n()
   const navigate = useNavigate()
+  const tree = useTreeOp()
   if (!data.league_rows.length) return <p className="py-6 text-sm text-muted-foreground">{t('teams.noLeagues')}</p>
   return (
     <Section title={t('section.leaguesCount', { count: data.league_rows.length })}>
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-12" />
-            <TableHead>{t('col.name')}</TableHead>
+            <TableHead className="w-10">
+              <SelectAllHead rows={data.league_rows} total={data.league_rows.length} onPick={(ids, on) => tree.setMany(ids.map((i) => `league:${i}`), on ? 'all' : 'none')} />
+            </TableHead>
+            <TableHead className="w-12 min-w-12" />
+            <TableHead className="w-full">{t('col.name')}</TableHead>
             <TableHead className="text-right">{t('col.country')}</TableHead>
             <TableHead className="w-28 text-center">{t('col.level')}</TableHead>
             <TableHead className="w-28 text-center">{t('col.teams')}</TableHead>
+            <TableHead className="w-28 text-center">{t('col.adboards')}</TableHead>
             <TableHead className="w-28">{t('col.id')}</TableHead>
           </TableRow>
         </TableHeader>
@@ -256,12 +261,16 @@ function LeaguesTab({ data }: { data: TeamDetail }) {
           {data.league_rows.map((l) => (
             <TableRow key={l.id} className="cursor-pointer" onClick={() => navigate(`/leagues/${l.id}`)}>
               <TableCell>
-                <LeagueImage id={l.id} size={64} available={l.has_logo} className="size-8" />
+                <RowSelect row={l} />
+              </TableCell>
+              <TableCell>
+                <LeagueImage id={l.id} size={64} available={l.has_logo} className="size-8 shrink-0" />
               </TableCell>
               <TableCell className="font-medium">{l.name}</TableCell>
               <TableCell className="text-right">{l.country ?? '—'}</TableCell>
               <TableCell className="text-center tabular-nums">{l.level ?? '—'}</TableCell>
               <TableCell className="text-center tabular-nums">{l.team_count}</TableCell>
+              <TableCell className="text-center tabular-nums">{l.adboard_count || '—'}</TableCell>
               <TableCell className="text-muted-foreground tabular-nums">{l.id}</TableCell>
             </TableRow>
           ))}
@@ -377,7 +386,14 @@ function RosterTable({ data }: { data: TeamDetail }) {
       <Table>
         <TableHeader className="sticky top-0 z-10 shadow-[0_1px_0_var(--border)] [&_th]:bg-card">
           <TableRow>
-            <TableHead className="w-10" />
+            <TableHead className="w-10">
+              <TreeBox
+                state={picked.length === 0 ? 'none' : picked.length === data.roster.length ? 'full' : 'part'}
+                disabled={op.isPending || !data.roster.length}
+                label={t('selectAll.label')}
+                onClick={() => setPlayers(picked.length === data.roster.length ? [] : data.roster.map((p) => p.id))}
+              />
+            </TableHead>
             <TableHead className="w-10" />
             <TableHead>{t('col.name')}</TableHead>
             <TableHead className="w-20 text-center">{t('col.overall')}</TableHead>
@@ -557,9 +573,48 @@ function Stadiums({ data }: { data: TeamDetail }) {
   if (!data.stadiums.length) return <p className="py-6 text-sm text-muted-foreground">{t('teams.noStadium')}</p>
   return (
     <div className="space-y-4">
+      <div className="rounded-lg border bg-card p-3">
+        <PartToggle nodeKey={`stadium:${data.id}`} state={data.basket_parts.stadium} label={t('stadium.inPackage')} hint={t('stadium.inPackageHint')} />
+      </div>
       {data.stadiums.map((s) => (
         <TeamStadium key={s.id} stadium={s} customName={data.stadiums.length === 1 ? data.stadium_custom_name : null} />
       ))}
+    </div>
+  )
+}
+
+/** The Others tab (as the FIFA 14 Studio's): the board files a patch names after the team and the team's ball, each
+ * with whether it goes in the package. */
+function OtherTab({ data }: { data: TeamDetail }) {
+  const { t } = useI18n()
+  return (
+    <div className="grid items-start gap-4 lg:grid-cols-2">
+      <Section
+        title={t('adboard.title')}
+        description={t('adboard.teamFiles')}
+        action={<PartToggle nodeKey={`adboards:${data.id}`} state={data.basket_parts.adboards} label={t('part.inPackage')} />}
+      >
+        {data.adboards.length ? <AdboardFiles names={data.adboards} /> : <p className="text-sm text-muted-foreground">{t('adboard.none')}</p>}
+      </Section>
+      <Section
+        title={t('teamBall.title')}
+        description={t('teamBall.description')}
+        action={<PartToggle nodeKey={`ball:${data.id}`} state={data.basket_parts.ball} label={t('part.inPackage')} />}
+      >
+        {data.ball ? (
+          <div className="flex items-center gap-3 rounded-lg border p-3">
+            <EquipmentImage kind="balls" code={data.ball.code} size={128} className="size-12 object-contain" />
+            <div className="min-w-0">
+              <Link to={`/balls?q=${data.ball.code}`} className="block truncate font-medium underline-offset-2 hover:underline">
+                {data.ball.name ?? t('equipment.unnamed', { code: data.ball.code })}
+              </Link>
+              <span className="text-xs text-muted-foreground">{t('equipment.codeLabel', { code: data.ball.code })}</span>
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">{t('teamBall.none')}</p>
+        )}
+      </Section>
     </div>
   )
 }

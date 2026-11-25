@@ -7,6 +7,9 @@ from conftest import wait
 
 
 NO_GEAR = {'boots': 0, 'gloves': 0, 'balls': 0}
+# what a full league of the fake game takes with it: the team's stadium, 3 board files (2 of the team, 1 of the
+# league), the star's boot, the keepers' glove and the team's ball
+WITH_LEAGUE = {'stadiums': 1, 'adboards': 3, 'boots': 1, 'gloves': 1, 'balls': 1}
 
 def test_status(client):
     s = client.get('/api/status').json()
@@ -79,7 +82,7 @@ def test_basket(client):
         r = client.post('/api/basket', json={'op': name, 'args': args})
         assert r.status_code == 200, r.text
         return r.json()
-    assert op('add_league', id=fakegame.LEAGUE) == {'nations': 0, 'leagues': 1, 'teams': 1, 'players': 16, 'stadiums': 0, 'adboards': 0, **NO_GEAR}
+    assert op('add_league', id=fakegame.LEAGUE) == {'nations': 0, 'leagues': 1, 'teams': 1, 'players': 16, **WITH_LEAGUE}
     assert op('set_team', id=fakegame.TEAM, players=[fakegame.STAR, fakegame.KEEPER])['players'] == 2
     assert op('add_players', ids=[fakegame.SHARED, fakegame.STAR])['players'] == 3  # STAR already inside
     rows = client.get('/api/players', params={'in_basket': 'yes'}).json()['items']
@@ -110,7 +113,7 @@ def test_nations(client):
 
     def op(name, **args):
         return client.post('/api/basket', json={'op': name, 'args': args}).json()
-    assert op('add_nation', id=54) == {'nations': 1, 'leagues': 1, 'teams': 1, 'players': 16, 'stadiums': 0, 'adboards': 0, **NO_GEAR}  # leagues and teams
+    assert op('add_nation', id=54) == {'nations': 1, 'leagues': 1, 'teams': 1, 'players': 16, **WITH_LEAGUE}  # leagues and teams
     assert client.get('/api/basket').json()['nations'] == [{'id': 54, 'name': 'Republic of Nowhere'}]
     assert op('remove_nation', id=54) == {'nations': 0, 'leagues': 0, 'teams': 0, 'players': 0, 'stadiums': 0, 'adboards': 0, **NO_GEAR}
 
@@ -273,3 +276,89 @@ def test_equipment(client):
     assert m['balls'][0]['source_id'] == fakegame.GAME_BALL and m['boots'] == []
     client.delete(f'/api/exports/{result["name"]}')
     assert op('remove_equipment', kind='balls', id=fakegame.GAME_BALL).json()['balls'] == 0
+
+
+def test_selection_tree(client):
+    def op(name, **args):
+        r = client.post('/api/basket', json={'op': name, 'args': args})
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    def node(key):
+        return client.get('/api/tree', params={'key': key, 'inside': True}).json()
+
+    def row(kind, rid):
+        return next(r for r in client.get(f'/api/{kind}', params={'size': 100}).json()['items'] if r['id'] == rid)
+
+    # a country with everything inside, then the country alone
+    counts = op('tree', key='nation:54', mode='all')
+    assert (counts['nations'], counts['leagues'], counts['teams'], counts['players']) == (1, 1, 1, 16)
+    n = node('nation:54')
+    assert n['node']['state'] == 'full' and n['node']['inside'] == {'leagues': 1, 'teams': 1, 'players': 16}
+    assert row('nations', 54)['basket_state'] == 'full' and row('nations', 54)['basket_count'] == {'on': 1, 'total': 1}
+    counts = op('tree', key='nation:54', mode='only')
+    assert (counts['nations'], counts['leagues'], counts['teams'], counts['players']) == (1, 0, 0, 0)
+    assert row('nations', 54)['basket_state'] == 'only'
+
+    # inside a team: its parts and players; a boot left out of the star, the ball left out of the team
+    op('tree', key=f'league:{fakegame.LEAGUE}', mode='all')
+    assert node('nation:54')['node']['state'] == 'full'
+    t = node(f'team:{fakegame.TEAM}')
+    assert [c['kind'] for c in t['children'][:3]] == ['stadium', 'ball', 'adboards'] and len(t['children']) == 19
+    star = f'player:{fakegame.TEAM}:{fakegame.STAR}'
+    assert [c['key'] for c in node(star)['children']] == [f'boot:{fakegame.TEAM}:{fakegame.STAR}']
+    op('tree', key=f'boot:{fakegame.TEAM}:{fakegame.STAR}', mode='none')
+    op('tree', key=f'ball:{fakegame.TEAM}', mode='none')
+    assert node(star)['node']['state'] == 'only' and node(f'team:{fakegame.TEAM}')['node']['state'] == 'part'
+    assert row('nations', 54)['basket_state'] == 'part'
+    assert row('players', fakegame.STAR)['basket_key'] == star
+
+    # a player picked in a team out of the basket brings the team alone (no parts, no other player)
+    op('tree', key=f'player:{fakegame.SMALL_TEAM}:8101', mode='all')
+    small = node(f'team:{fakegame.SMALL_TEAM}')
+    assert small['node']['state'] == 'part' and small['node']['inside']['players'] == 1
+
+    # the whole tree: the two countries
+    root = node('root')
+    assert [c['key'] for c in root['children']] == ['nation:54', 'nation:52']
+
+    job = client.post('/api/export').json()
+    wait(lambda: client.get(f'/api/export/{job["id"]}').json()['state'] != 'running')
+    counts = client.get(f'/api/export/{job["id"]}').json()['result']['counts']
+    assert (counts['boots'], counts['balls'], counts['gloves'], counts['stadiums']) == (0, 0, 1, 1)
+
+    # "select all": the ids of every row that passes the filters, then many nodes at once
+    ids = client.get('/api/players', params={'team': fakegame.SMALL_TEAM, 'ids_only': True}).json()['ids']
+    assert sorted(ids) == sorted(fakegame.SMALL_TEAM_PLAYERS)
+    op('tree_many', keys=[f'player:0:{i}' for i in ids], mode='all')
+    assert [c['key'] for c in node('root')['children']][-1] == 'group:players'
+    op('tree', key='root', mode='none')
+    assert client.get('/api/basket').json()['counts']['players'] == 0
+    assert client.post('/api/basket', json={'op': 'tree', 'args': {'key': 'team:x', 'mode': 'all'}}).status_code == 400
+
+
+def test_old_basket_switches(tmp_path):
+    from fpxapi.state import Basket
+    path = tmp_path / 'basket.json'
+    path.write_text(json.dumps({'leagues': [9001], 'teams': {'7001': {'players': [8001]}},
+                                'form': {'include_stadiums': False, 'include_equipment': False}}))
+    b = Basket(str(path))
+    assert b.data['off'] == {'team:7001': ['stadium', 'ball'], 'player:8001': ['boot', 'glove']}
+    assert b.data['form']['include_stadiums'] is True and b.data['form']['include_adboards'] is True
+    sel = b.selection()
+    assert sel.teams[7001].stadium is False and sel.teams[7001].adboards is True and sel.no_gear == {8001: ['boot', 'glove']}
+
+
+def test_team_and_league_parts(client):
+    t = client.get(f'/api/teams/{fakegame.TEAM}').json()
+    assert t['basket_parts'] == {'stadium': 'none', 'ball': 'none', 'adboards': 'none'}  # not in the basket yet
+    assert len(t['adboards']) == 2 and t['ball']['code'] > 0
+    client.post('/api/basket', json={'op': 'tree', 'args': {'key': f'team:{fakegame.TEAM}', 'mode': 'all'}})
+    client.post('/api/basket', json={'op': 'tree', 'args': {'key': f'stadium:{fakegame.TEAM}', 'mode': 'none'}})
+    t = client.get(f'/api/teams/{fakegame.TEAM}').json()
+    assert t['basket_parts'] == {'stadium': 'none', 'ball': 'full', 'adboards': 'full'}
+    assert client.get(f'/api/teams/{fakegame.SMALL_TEAM}').json()['basket_parts']['stadium'] is None  # has none
+    lg = client.get(f'/api/leagues/{fakegame.LEAGUE}').json()
+    assert [b['name'] for b in lg['adboards']] == [f'specificadboard_0_{fakegame.LEAGUE}_0_0'] and lg['basket_boards'] == 'none'
+    client.post('/api/basket', json={'op': 'tree', 'args': {'key': f'league:{fakegame.LEAGUE}', 'mode': 'all'}})
+    assert client.get(f'/api/leagues/{fakegame.LEAGUE}').json()['basket_boards'] == 'full'

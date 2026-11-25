@@ -2,6 +2,7 @@ import { Landmark } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
+import { SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
 import { Badge, BasketCheck } from '@/components/common/detail'
 import { StadiumImage } from '@/components/common/pictures'
 import { useI18n } from '@/i18n'
@@ -20,6 +21,7 @@ export function StadiumsPage() {
   const { data, isFetching } = useList('stadiums', list.request, api.stadiums)
   const options = useOptions().data
   const op = useBasketOp()
+  const tree = useTreeOp()
   const sortState = { sort: list.sort, dir: list.dir, update: list.update, current: data?.sort ?? '', currentDir: data?.dir ?? '' }
   return (
     <div className={LIST_PAGE}>
@@ -49,7 +51,9 @@ export function StadiumsPage() {
       <ScrollTable>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-10" />
+            <TableHead className="w-10">
+              <SelectAllHead rows={data?.items ?? []} total={data?.total ?? 0} fetchIds={() => api.listIds('/api/stadiums', list.request).then((r) => r.ids)} onPick={(ids, on) => tree.setMany(ids.map((i) => `onestadium:${i}`), on ? 'all' : 'none')} />
+            </TableHead>
             <TableHead className="w-28" />
             <SortHead field="name" label={t('col.name')} state={sortState} />
             <SortHead field="country" label={t('col.country')} state={sortState} />

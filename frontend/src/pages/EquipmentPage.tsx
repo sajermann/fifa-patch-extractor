@@ -1,5 +1,6 @@
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
+import { SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
 import type { EquipmentKind } from '@/api/types'
 import { BasketCheck } from '@/components/common/detail'
 import { EquipmentImage } from '@/components/common/pictures'
@@ -23,6 +24,7 @@ export function EquipmentPage({ kind }: { kind: EquipmentKind }) {
   const list = useListState(FILTERS)
   const { data, isFetching } = useList(kind, list.request, (p) => api.equipment(kind, p))
   const op = useBasketOp()
+  const tree = useTreeOp()
   const sortState = { sort: list.sort, dir: list.dir, update: list.update, current: data?.sort ?? '', currentDir: data?.dir ?? '' }
   return (
     <div className={LIST_PAGE}>
@@ -46,7 +48,9 @@ export function EquipmentPage({ kind }: { kind: EquipmentKind }) {
       <ScrollTable>
         <TableHeader>
           <TableRow>
-            <TableHead className="w-10" />
+            <TableHead className="w-10">
+              <SelectAllHead rows={data?.items ?? []} total={data?.total ?? 0} fetchIds={() => api.listIds(`/api/equipment/${kind}`, list.request).then((r) => r.ids)} onPick={(ids, on) => tree.setMany(ids.map((i) => `gear:${kind}:${i}`), on ? 'all' : 'none')} />
+            </TableHead>
             <TableHead className="w-16" />
             <SortHead field="name" label={t('equipment.name')} state={sortState} />
             <SortHead field="id" label={t('equipment.code')} state={sortState} className="text-center" />

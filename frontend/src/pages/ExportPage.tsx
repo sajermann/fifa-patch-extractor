@@ -1,7 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Download, FolderOpen, Loader2, Package, Save, Trash2, Upload, X } from 'lucide-react'
+import { Download, FolderOpen, Loader2, Package, Save, Trash2, Upload } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -9,8 +8,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { api, exportUrl } from '@/api/client'
-import type { BasketForm, BasketGear, EquipmentKind, ExportJob } from '@/api/types'
+import type { BasketForm, ExportJob } from '@/api/types'
 import { Badge, Section } from '@/components/common/detail'
+import { BasketTree, TreeLegend } from '@/components/common/selectionTree'
 import { useI18n } from '@/i18n'
 import { useBasketOp, useBasketView, useStatus } from '@/state/queries'
 import { usePageLabel } from '@/lib/back'
@@ -40,108 +40,13 @@ export function ExportPage() {
         </div>
       </div>
       {basket && (
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-          <Section title={t('export.nationsCount', { count: basket.nations.length })}>
-            <ItemList items={basket.nations} to="nations" onRemove={(id) => op.mutate({ op: 'remove_nation', args: { id, with_leagues: false } })} />
-          </Section>
-          <Section title={t('export.leaguesCount', { count: basket.leagues.length })}>
-            <ItemList items={basket.leagues} to="leagues" onRemove={(id) => op.mutate({ op: 'remove_league', args: { id, with_teams: false } })} />
-          </Section>
-          <Section title={t('export.teamsCount', { count: basket.teams.length })}>
-            <ItemList
-              items={basket.teams.map((tm) => ({ ...tm, extra: tm.roster !== null ? `${tm.players}/${tm.roster}` : `${tm.players}` }))}
-              to="teams"
-              onRemove={(id) => op.mutate({ op: 'remove_team', args: { id } })}
-            />
-          </Section>
-          <Section title={t('export.playersCount', { count: basket.counts.players })}>
-            <p className="mb-2 text-xs text-muted-foreground">{t('export.playersHint', { alone: basket.players.length })}</p>
-            <ItemList items={basket.players} to="players" onRemove={(id) => op.mutate({ op: 'remove_players', args: { ids: [id] } })} />
-          </Section>
-          <Section title={t('export.stadiumsCount', { count: basket.stadiums.length })}>
-            <p className="mb-2 text-xs text-muted-foreground">{t('export.stadiumsHint')}</p>
-            <ItemList items={basket.stadiums} to="stadiums" onRemove={(id) => op.mutate({ op: 'remove_stadium', args: { id } })} />
-          </Section>
-          <Section title={t('export.adboardsCount', { count: basket.adboards.length })}>
-            <p className="mb-2 text-xs text-muted-foreground">{t('export.adboardsHint')}</p>
-            <BoardList items={basket.adboards} onRemove={(id) => op.mutate({ op: 'remove_adboard', args: { id } })} />
-          </Section>
-          {(['boots', 'gloves', 'balls'] as const).map((kind) => (
-            <Section key={kind} title={t(`export.${kind}Count`, { count: basket[kind]?.length ?? 0 })}>
-              <p className="mb-2 text-xs text-muted-foreground">{t('export.equipmentHint')}</p>
-              <GearList kind={kind} items={basket[kind] ?? []} onRemove={(id) => op.mutate({ op: 'remove_equipment', args: { kind, id } })} />
-            </Section>
-          ))}
-        </div>
+        <Section title={t('export.contents')} description={t('export.contentsHint')} action={<TreeLegend />}>
+          <BasketTree empty={<p className="text-sm text-muted-foreground">{t('export.none')}</p>} />
+        </Section>
       )}
       {basket && <ExportForm form={basket.form} disabled={empty || !ready} />}
       <ExportsList />
     </div>
-  )
-}
-
-function ItemList({ items, to, onRemove }: { items: { id: number; name: string | null; extra?: string }[]; to: string; onRemove: (id: number) => void }) {
-  const { t } = useI18n()
-  if (!items.length) return <p className="text-sm text-muted-foreground">{t('export.none')}</p>
-  return (
-    <ul className="max-h-72 space-y-1 overflow-auto pr-1 text-sm">
-      {items.map((it) => (
-        <li key={it.id} className="flex items-center gap-2">
-          <Link to={`/${to}/${it.id}`} className="min-w-0 flex-1 truncate hover:underline">
-            {it.name ?? <span className="text-amber-700 dark:text-amber-300">{t('export.missing', { id: it.id })}</span>}
-          </Link>
-          {it.extra && <Badge>{it.extra}</Badge>}
-          <Button variant="ghost" size="icon-sm" onClick={() => onRemove(it.id)} aria-label={t('basket.remove')} title={t('basket.remove')}>
-            <X />
-          </Button>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-/** The board files picked on their own (by file name; they have no screen of their own: the link opens the list). */
-function BoardList({ items, onRemove }: { items: { id: string; name: string | null }[]; onRemove: (id: string) => void }) {
-  const { t } = useI18n()
-  if (!items.length) return <p className="text-sm text-muted-foreground">{t('export.none')}</p>
-  return (
-    <ul className="max-h-72 space-y-1 overflow-auto pr-1 text-sm">
-      {items.map((it) => (
-        <li key={it.id} className="flex items-center gap-2">
-          <Link to={`/adboards?q=${encodeURIComponent(it.id)}`} className="min-w-0 flex-1 truncate hover:underline">
-            {it.name ?? <span className="text-amber-700 dark:text-amber-300">{t('export.missingFile', { name: it.id })}</span>}
-          </Link>
-          <Button variant="ghost" size="icon-sm" onClick={() => onRemove(it.id)} aria-label={t('basket.remove')} title={t('basket.remove')}>
-            <X />
-          </Button>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-/** Boots, gloves or balls picked on their own (no screen of their own: the link opens the list, searched by code). */
-function GearList({ kind, items, onRemove }: { kind: EquipmentKind; items: BasketGear[]; onRemove: (id: number) => void }) {
-  const { t } = useI18n()
-  if (!items.length) return <p className="text-sm text-muted-foreground">{t('export.none')}</p>
-  return (
-    <ul className="max-h-72 space-y-1 overflow-auto pr-1 text-sm">
-      {items.map((it) => (
-        <li key={it.id} className="flex items-center gap-2">
-          <Link to={`/${kind}?q=${it.id}`} className="min-w-0 flex-1 truncate hover:underline">
-            {!it.found ? (
-              <span className="text-amber-700 dark:text-amber-300">{t('export.missing', { id: it.id })}</span>
-            ) : (
-              (it.name ?? t('equipment.unnamed', { code: it.id }))
-            )}
-          </Link>
-          <Badge>{it.id}</Badge>
-          <Button variant="ghost" size="icon-sm" onClick={() => onRemove(it.id)} aria-label={t('basket.remove')} title={t('basket.remove')}>
-            <X />
-          </Button>
-        </li>
-      ))}
-    </ul>
   )
 }
 
@@ -207,48 +112,6 @@ function ExportForm({ form, disabled }: { form: BasketForm; disabled: boolean })
           <div>
             <Label htmlFor="originals">{t('export.includeOriginals')}</Label>
             <p className="text-xs text-muted-foreground">{t('export.includeOriginalsHint')}</p>
-          </div>
-        </div>
-        <div className="flex items-start gap-3">
-          <Checkbox
-            id="stadiums"
-            checked={draft.include_stadiums}
-            onCheckedChange={(v) => {
-              setDraft({ ...draft, include_stadiums: v === true })
-              save({ include_stadiums: v === true })
-            }}
-          />
-          <div>
-            <Label htmlFor="stadiums">{t('export.includeStadiums')}</Label>
-            <p className="text-xs text-muted-foreground">{t('export.includeStadiumsHint')}</p>
-          </div>
-        </div>
-        <div className="flex items-start gap-3">
-          <Checkbox
-            id="adboards"
-            checked={draft.include_adboards}
-            onCheckedChange={(v) => {
-              setDraft({ ...draft, include_adboards: v === true })
-              save({ include_adboards: v === true })
-            }}
-          />
-          <div>
-            <Label htmlFor="adboards">{t('export.includeAdboards')}</Label>
-            <p className="text-xs text-muted-foreground">{t('export.includeAdboardsHint')}</p>
-          </div>
-        </div>
-        <div className="flex items-start gap-3">
-          <Checkbox
-            id="equipment"
-            checked={draft.include_equipment !== false}
-            onCheckedChange={(v) => {
-              setDraft({ ...draft, include_equipment: v === true })
-              save({ include_equipment: v === true })
-            }}
-          />
-          <div>
-            <Label htmlFor="equipment">{t('export.includeEquipment')}</Label>
-            <p className="text-xs text-muted-foreground">{t('export.includeEquipmentHint')}</p>
           </div>
         </div>
       </div>

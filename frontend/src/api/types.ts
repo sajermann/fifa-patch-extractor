@@ -53,7 +53,41 @@ export interface Page<T> {
   dir: 'asc' | 'desc'
 }
 
-export interface NationRow {
+/** State of an item in the selection tree: full = it and everything inside; only = it alone; part = some of it. */
+export type TreeState = 'full' | 'only' | 'part' | 'none'
+
+/** A list row's node in the selection tree (count: how much of what is right inside goes; null = nothing inside). */
+export interface BasketNode {
+  basket_key: string
+  basket_state: TreeState
+  basket_count: { on: number; total: number } | null
+}
+
+/** One row of the selection tree (see the backend's tree.py for the kinds and keys). */
+export interface TreeNode {
+  key: string
+  kind: string
+  id: number | string | null
+  name: string | null
+  detail: string | null
+  /** boot, glove or ball code (its picture) */
+  code: number | null
+  state: TreeState
+  count: { on: number; total: number } | null
+  /** boot or glove: other players of the basket that take the same one */
+  shared: number
+  /** board files of a team or league */
+  count_files?: number
+  /** asked with inside=true: how many leagues, teams and players of it go */
+  inside?: { leagues: number; teams: number; players: number }
+}
+
+export interface TreeView {
+  node: TreeNode
+  children: TreeNode[]
+}
+
+export interface NationRow extends BasketNode {
   id: number
   name: string
   database_name: string | null
@@ -69,7 +103,7 @@ export interface NationRow {
 
 /** A board file of the game: one of its own boards (kind game: number, group) or one a patch's stadium script names
  * (kind specific: team, tournament, stadium, variant; null = any). */
-export interface AdboardRow {
+export interface AdboardRow extends BasketNode {
   id: string
   kind: 'game' | 'specific'
   number: number | null
@@ -84,7 +118,7 @@ export interface AdboardRow {
   in_basket: boolean
 }
 
-export interface StadiumRow {
+export interface StadiumRow extends BasketNode {
   id: number
   name: string
   /** the StadiumName_ text of the language database (patches often leave it behind) */
@@ -101,19 +135,21 @@ export interface StadiumRow {
   in_basket: boolean
 }
 
-export interface LeagueRow {
+export interface LeagueRow extends BasketNode {
   id: number
   name: string
   database_name: string | null
   level: number | null
   country_id: number | null
   country: string | null
+  /** the league's own board files */
+  adboard_count: number
   team_count: number
   has_logo: boolean
   in_basket: boolean
 }
 
-export interface TeamRow {
+export interface TeamRow extends BasketNode {
   id: number
   name: string
   abbr3: string | null
@@ -130,7 +166,7 @@ export interface TeamRow {
   basket_players: number
 }
 
-export interface PlayerRow {
+export interface PlayerRow extends BasketNode {
   id: number
   name: string
   overall: number | null
@@ -164,6 +200,10 @@ export interface LeagueDetail extends LeagueRow {
   images: string[]
   teams: TeamRow[]
   raw: Raw
+  /** the league's own board files */
+  adboards: { name: string; stadium: number | null; variant: number }[]
+  /** whether they go in the package (full | none), null = the league has none */
+  basket_boards: TreeState | null
 }
 
 export interface NationDetail extends NationRow {
@@ -265,6 +305,12 @@ export interface TeamDetail extends TeamRow {
   rival: Ref | null
   tactics: Record<string, number | null>
   raw: Raw
+  /** board files a patch names after the team (file names) */
+  adboards: string[]
+  /** the team's ball (teams.balltype), null = none */
+  ball: { code: number; name: string | null } | null
+  /** the team's parts in the basket: full = they go, none = left out, null = the team has none */
+  basket_parts: Record<'stadium' | 'ball' | 'adboards', TreeState | null>
 }
 
 export interface PlayerTeamLink {
@@ -328,7 +374,7 @@ export interface Options {
 export type EquipmentKind = 'boots' | 'gloves' | 'balls'
 
 /** A boot, glove or ball of the game (`id` = its code in the players' / teams' rows). */
-export interface EquipmentRow {
+export interface EquipmentRow extends BasketNode {
   id: number
   /** its name in the game's texts; null = it has none */
   name: string | null
