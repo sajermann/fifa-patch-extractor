@@ -226,7 +226,8 @@ EQUIPMENT_LISTS = {'boot': 'boots', 'glove': 'gloves', 'ball': 'balls'}
 # a player's own eyes and hair (a real face), and the generic ones the game shows when a real face lacks them
 GENERIC_FACE_OWN = {'eyes': 'data/sceneassets/heads/eyes_{}_0_textures.rx3',
                     'hair': 'data/sceneassets/hair/hair_{}_0_0.rx3',
-                    'hair_textures': 'data/sceneassets/hair/hair_{}_0_textures.rx3'}
+                    'hair_textures': 'data/sceneassets/hair/hair_{}_0_textures.rx3',
+                    'hairlod': 'data/sceneassets/hairlod/hairlod_{}_0_0.rx3'}
 GENERIC_PARTS = {'eyes': 'data/sceneassets/heads/eyes_{}_1_textures.rx3',
                  'hair': 'data/sceneassets/hair/hair_{}_1_0.rx3',
                  'hair_textures': 'data/sceneassets/hair/hair_{}_1_textures.rx3',
@@ -243,7 +244,7 @@ class _Builder:
         self.nation_ids: set[int] = set()
         self.stadium_ids: set[int] = set()
         # generic parts of the source (codes) a real face that lacks its own needs: see generic_parts()
-        self.generic_needed: dict[str, set[int]] = {'eyes': set(), 'hair': set()}
+        self.generic_needed: dict[str, set[int]] = {'eyes': set(), 'hair': set(), 'hairlod': set()}
 
     # ---- files ----------------------------------------------------------------------------------------------
 
@@ -578,25 +579,30 @@ class _Builder:
         }
 
     def _note_generic(self, pid: int, row: dict, stored: dict) -> None:
-        """A real face without its own eyes or hair: the source game shows the generic ones of the player's codes
-        (eyecolorcode, hairtypecode) in their place, so the package takes those generic files too (generic_parts)."""
+        """A real face without its own eyes, hair or hair seen from afar: the source game shows the generic ones of
+        the player's codes (eyecolorcode, hairtypecode) in their place, so the package takes those generic files too
+        (generic_parts). Hair code 0 is no hair (the game has no generic of it): nothing to take."""
         paths = {p.lower() for p in stored}
         eyes = isinstance(row.get('eyecolorcode'), int) and row['eyecolorcode'] > 0
         if eyes and GENERIC_FACE_OWN['eyes'].format(pid) not in paths:
             self.generic_needed['eyes'].add(row['eyecolorcode'])
-        hair = isinstance(row.get('hairtypecode'), int) and row['hairtypecode'] >= 0
+        hair = isinstance(row.get('hairtypecode'), int) and row['hairtypecode'] > 0
         if hair and not all(GENERIC_FACE_OWN[k].format(pid) in paths for k in ('hair', 'hair_textures')):
             self.generic_needed['hair'].add(row['hairtypecode'])
+        elif hair and GENERIC_FACE_OWN['hairlod'].format(pid) not in paths:
+            self.generic_needed['hairlod'].add(row['hairtypecode'])
 
     def generic_parts(self) -> dict:
-        """{'eyes': {code: {file}}, 'hair': {code: {files: {kind: file}}}} of the generic parts noted by
+        """{'eyes': {code: {file}}, 'hair': {code: {files: {kind: file}}}, 'hairlod': {code: {file}}} of the generic
+        parts noted by
         _note_generic, as the source game has them (a patch may change them or add its own codes; a code the source
         has no files of is left out)."""
-        out: dict = {'eyes': {}, 'hair': {}}
-        for code in sorted(self.generic_needed['eyes']):
-            path = GENERIC_PARTS['eyes'].format(code)
-            if self.src.files.exists(path) and (data := self._read(path, f'generic eyes {code}')) is not None:
-                out['eyes'][str(code)] = {'file': self._original(path, data), 'source_path': path}
+        out: dict = {'eyes': {}, 'hair': {}, 'hairlod': {}}
+        for key in ('eyes', 'hairlod'):
+            for code in sorted(self.generic_needed[key]):
+                path = GENERIC_PARTS[key].format(code)
+                if self.src.files.exists(path) and (data := self._read(path, f'generic {key} {code}')) is not None:
+                    out[key][str(code)] = {'file': self._original(path, data), 'source_path': path}
         for code in sorted(self.generic_needed['hair']):
             files = {}
             for kind in ('hair', 'hair_textures', 'hairlod'):

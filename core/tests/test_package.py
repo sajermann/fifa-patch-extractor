@@ -57,6 +57,7 @@ def test_league_team_players(src):
     assert [p['name'] for p in team['formation']['positions']][:3] == ['GK', 'RB', 'CB']
     assert team['formation']['positions'][0]['y'] == pytest.approx(0.05)  # a float32 of the database
     assert star['face'] and all(f['file'] in pkg.files for f in star['face']['files'].values())
+    assert sorted(f['kind'] for f in star['face']['files'].values()) == ['bump', 'eyes', 'face', 'hair', 'head']
     assert star['photo']['image'] in pkg.files and star['photo']['original'] in pkg.files
     assert star['teams'] == [{'team_id': fakegame.TEAM, 'jersey_number': 10, 'position': 25, 'position_name': 'ST'}]
     assert players[fakegame.KEEPER]['face'] is None
@@ -383,4 +384,23 @@ def test_a_face_without_its_eyes_and_hair_takes_the_generic_ones_of_the_source(t
                                                            'hairlod': b'generic hairlod 301'}
     assert not pkg.warnings  # the keeper has no real face: nothing of his goes
     # a whole face needs none
-    assert package.build(src, Selection(players=[fakegame.KEEPER])).manifest['generic_parts'] == {'eyes': {}, 'hair': {}}
+    assert package.build(src, Selection(players=[fakegame.KEEPER])).manifest['generic_parts'] ==         {'eyes': {}, 'hair': {}, 'hairlod': {}}
+
+
+def test_a_face_with_its_hair_but_not_the_one_seen_from_afar_takes_only_the_generic_one_from_afar(tmp_path):
+    root = fakegame.build(str(tmp_path / 'game'))
+    assets = os.path.join(root, 'Game', 'data', 'sceneassets')
+    for name, data in {f'hair/hair_{fakegame.STAR}_0_textures.rx3': b'own hair textures',
+                       'hair/hair_301_1_0.rx3': b'generic hair 301', 'hair/hair_301_1_textures.rx3': b'g',
+                       'hairlod/hairlod_301_1_0.rx3': b'generic hairlod 301'}.items():
+        os.makedirs(os.path.dirname(os.path.join(assets, name)), exist_ok=True)
+        with open(os.path.join(assets, name), 'wb') as f:
+            f.write(data)
+    src = Fifa14Source(root)
+    src.players[fakegame.STAR]['hairtypecode'] = 301
+    parts = package.build(src, Selection(players=[fakegame.STAR])).manifest['generic_parts']
+    assert parts['hair'] == {} and set(parts['hairlod']) == {'301'}
+    # hair code 0 is no hair (the game has no generic of it): nothing goes
+    src.players[fakegame.STAR]['hairtypecode'] = 0
+    parts = package.build(src, Selection(players=[fakegame.STAR])).manifest['generic_parts']
+    assert parts['hair'] == {} and parts['hairlod'] == {}

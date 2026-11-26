@@ -86,7 +86,7 @@ export function AppShell() {
             to="/export"
             label="nav.export"
             icon={Package}
-            extra={total > 0 ? <span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground tabular-nums">{basket!.players || total}</span> : undefined}
+            extra={total > 0 ? <span className="rounded-full bg-primary px-1.5 text-xs text-primary-foreground tabular-nums">{total}</span> : undefined}
           />
         </nav>
         <div className="mt-auto space-y-2">

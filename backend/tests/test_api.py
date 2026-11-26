@@ -58,7 +58,7 @@ def test_details(client):
     assert t['formation']['name'] == '4-4-2' and len(t['formation']['positions']) == 11
     assert t['club'] == {} and t['rival'] is None  # the fake teams have no club columns
     p = client.get(f'/api/players/{fakegame.STAR}').json()
-    assert p['names']['last'] == 'Plàyer' and len(p['face_files']) == 4 and p['raw']['playerid'] == fakegame.STAR
+    assert p['names']['last'] == 'Plàyer' and len(p['face_files']) == 5 and p['raw']['playerid'] == fakegame.STAR
     assert p['traits'] == ['leadership', 'finesse_shot', 'one_club_player'] and len(p['all_traits']) == 41
     # the Accessories tab: his boot (and no glove), not in the empty basket
     assert p['boot'] == {'code': fakegame.GAME_BOOT, 'name': 'B01'} and p['glove'] is None

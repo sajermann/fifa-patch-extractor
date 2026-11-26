@@ -102,7 +102,7 @@ values as stored (integers already include the field's range offset, as the game
 | `attributes` | ratings with neutral names (`acceleration`, `sprint_speed`, `finishing`, ..., `overall`, `potential`, `skill_moves`, `weak_foot`) |
 | `appearance` | appearance codes as the game stores them (`headtypecode`, `hairtypecode`, `skintonecode`, ...) |
 | `photo` | `{image, source_path, original?}` or null |
-| `face` | `{files: {game path: {kind, file}}}` (kinds: `head`, `face`, `eyes`, `hair`, `hairlod`) or null |
+| `face` | `{files: {game path: {kind, file}}}` (kinds: `head`, `bump`, `face`, `eyes`, `hair`, `hairlod`; `bump` = `heads/head_<id>_bump.rx3`, the head's relief textures, only some faces have it) or null |
 | `teams[]` | links to the teams of this package whose roster has the player: `team_id`, `jersey_number`, `position`, `position_name` |
 | `raw` | rows with this `playerid` (every `teamplayerlinks` row of the source, too) + the `playernames` rows of its names |
 
@@ -110,13 +110,14 @@ values as stored (integers already include the field's range offset, as the game
 
 `generic_parts`: the source game's generic eyes and hair that a real face without its own uses (the game shows the
 generic part of the player's `eyecolorcode` / `hairtypecode` in its place; a patch may change these files or add
-codes of its own). Only the codes of the exported players whose `face` lacks its eyes or its hair. Optional (packages
-made before it have none).
+codes of its own). Only the codes of the exported players whose `face` lacks its eyes, its hair or its hair seen
+from afar (hair code 0 = no hair: none). Optional (packages made before it have none).
 
 | field | meaning |
 |---|---|
 | `eyes` | `{"<eyecolorcode>": {file, source_path}}` (`heads/eyes_<code>_1_textures.rx3`) |
 | `hair` | `{"<hairtypecode>": {files: {hair, hair_textures, hairlod?}}}` (`hair/hair_<code>_1_0.rx3`, `hair_<code>_1_textures.rx3`, `hairlod/hairlod_<code>_1_0.rx3`) |
+| `hairlod` | `{"<hairtypecode>": {file, source_path}}` (`hairlod/hairlod_<code>_1_0.rx3`): faces that have their own hair but not the hair seen from afar |
 
 ### Nation
 

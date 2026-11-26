@@ -46,7 +46,7 @@ def test_assets(game):
     assert set(src.current_kits(fakegame.TEAM)) == {0, 1, 2}
     assert src.current_kits(fakegame.TEAM)[0]['jerseycollargeometrytype'] == 3  # year 0, not the classic kit
     assert src.has_face(fakegame.STAR) and not src.has_face(fakegame.KEEPER)
-    assert set(src.face_paths(fakegame.STAR).values()) == {'head', 'face', 'eyes', 'hair'}
+    assert set(src.face_paths(fakegame.STAR).values()) == {'head', 'bump', 'face', 'eyes', 'hair'}
     assert src.flag_path(54) == 'data/ui/imgassets/flags512x512/f_54.dds' or src.flag_path(54) is None
 
 
