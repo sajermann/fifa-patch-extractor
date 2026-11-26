@@ -5,7 +5,7 @@ import os
 import sys
 from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 log = logging.getLogger('fpxapi')
 
@@ -39,6 +39,8 @@ MAX_RECENT = 8
 if CORE_DIR not in sys.path:
     sys.path.insert(0, CORE_DIR)
 
+from fpx import workers  # noqa: E402 - after the core folder is on the path
+
 Language = Literal['pt-BR', 'en']
 
 
@@ -48,6 +50,20 @@ class Config(BaseModel):
     recent_sources: list[str] = []
     game_language: str = 'eng_us'  # language database the names are read from (data/loc/<language>.db)
     output_dir: Optional[str] = None  # where packages are written (None = <data>/exports)
+    # what an export may use (fpx.workers; None = the defaults), as the Studios' build settings. Added 26/11/2026,
+    # optional: older files load unchanged; out-of-range values are brought into range
+    export_cores: Optional[int] = None
+    export_memory_percent: Optional[int] = None
+
+    @field_validator('export_cores', mode='after')
+    @classmethod
+    def _cores_in_range(cls, v):
+        return workers.clamp_cores(v)
+
+    @field_validator('export_memory_percent', mode='after')
+    @classmethod
+    def _memory_in_range(cls, v):
+        return workers.clamp_memory_percent(v)
 
     def exports_dir(self) -> str:
         return self.output_dir or os.path.join(DATA_DIR, 'exports')

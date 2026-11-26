@@ -8,9 +8,16 @@ One zip with `package.json` at the root (see PACKAGE_FORMAT.md). Every item has:
 Nothing is converted for any destination: whoever imports the package decides how to use each value.
 """
 import datetime
+import hashlib
 import json
 import os
+import shutil
+import threading
 import zipfile
+import zlib
+from collections import deque
+from collections.abc import MutableMapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from urllib.parse import urlsplit
 
@@ -68,10 +75,107 @@ class Options:
     tool_version: str = '0.0.0'
 
 
+# the steps an export goes through, in order (progress: see build() and write())
+EXPORT_STEPS = ('prepare', 'leagues', 'teams', 'players', 'stadiums', 'nations', 'adboards', 'equipment', 'write')
+COMPRESS_LEVEL = 6  # zip deflate level (zipfile's default)
+
+
+class ExportCancelled(Exception):
+    pass
+
+
+class _Progress:
+    """Tells the caller where the export is: progress(dict) with step (EXPORT_STEPS), step_done/step_total, done/total
+    (items of every step but 'write'; the countries join the total once known), item ({kind, id, name}: the last one
+    that started) and, while writing, bytes_done/bytes_total. Also checks the cancel event."""
+
+    def __init__(self, fn=None, cancel: threading.Event | None = None):
+        self.fn, self.cancel = fn, cancel
+        self.lock = threading.Lock()
+        self.state = {'step': None, 'step_done': 0, 'step_total': 0, 'done': 0, 'total': 0, 'item': None,
+                      'bytes_done': 0, 'bytes_total': 0}
+
+    def check(self):
+        if self.cancel is not None and self.cancel.is_set():
+            raise ExportCancelled()
+
+    def send(self, **changes):
+        with self.lock:
+            self.state.update(changes)
+            snapshot = dict(self.state)
+        if self.fn:
+            self.fn(snapshot)
+
+    def step(self, name: str, total: int = 0):
+        self.check()
+        self.send(step=name, step_done=0, step_total=total, item=None)
+
+    def started(self, kind: str, oid, name):
+        self.check()
+        self.send(item={'kind': kind, 'id': oid, 'name': name})
+
+    def finished(self):
+        with self.lock:
+            self.state['step_done'] += 1
+            self.state['done'] += 1
+        self.send()
+
+
+class Spool(MutableMapping):
+    """The package's files kept in a folder instead of the memory (a whole patch passes tens of GB): {zip name:
+    bytes} as a dict, each value a file named by the hash of its key. Safe from several threads. close() removes
+    the folder."""
+
+    def __init__(self, folder: str):
+        self.folder = folder
+        os.makedirs(folder, exist_ok=True)
+        self._sizes: dict[str, int] = {}
+        self._lock = threading.Lock()
+
+    def _path(self, key: str) -> str:
+        return os.path.join(self.folder, hashlib.sha1(key.encode('utf-8')).hexdigest())
+
+    def __setitem__(self, key: str, data: bytes) -> None:
+        with open(self._path(key), 'wb') as f:
+            f.write(data)
+        with self._lock:
+            self._sizes[key] = len(data)
+
+    def __getitem__(self, key: str) -> bytes:
+        if key not in self._sizes:
+            raise KeyError(key)
+        with open(self._path(key), 'rb') as f:
+            return f.read()
+
+    def __delitem__(self, key: str) -> None:
+        with self._lock:
+            del self._sizes[key]
+        os.remove(self._path(key))
+
+    def __contains__(self, key) -> bool:
+        return key in self._sizes
+
+    def __iter__(self):
+        return iter(list(self._sizes))
+
+    def __len__(self) -> int:
+        return len(self._sizes)
+
+    def size(self, key: str) -> int:
+        return self._sizes[key]
+
+    def close(self) -> None:
+        shutil.rmtree(self.folder, ignore_errors=True)
+
+
+def _size(files, key: str) -> int:
+    return files.size(key) if isinstance(files, Spool) else len(files[key])
+
+
 @dataclass
 class Package:
     manifest: dict
-    files: dict[str, bytes]
+    files: MutableMapping  # zip name -> bytes: a dict, or a Spool (build(spool=...)) on the disk
     warnings: list[str]
 
 
@@ -118,18 +222,28 @@ def _id(value):
 # tables with a stadiumid that describe matches or saves, not the stadium
 STADIUM_RAW_SKIP = ('fixtures', 'career_managerpref', 'teamstadiumlinkscache')
 
-EQUIPMENT_LISTS = {'boot': 'boots', 'glove': 'gloves', 'ball': 'balls'}  # the manifest's list of each kind
+EQUIPMENT_LISTS = {'boot': 'boots', 'glove': 'gloves', 'ball': 'balls'}
+# a player's own eyes and hair (a real face), and the generic ones the game shows when a real face lacks them
+GENERIC_FACE_OWN = {'eyes': 'data/sceneassets/heads/eyes_{}_0_textures.rx3',
+                    'hair': 'data/sceneassets/hair/hair_{}_0_0.rx3',
+                    'hair_textures': 'data/sceneassets/hair/hair_{}_0_textures.rx3'}
+GENERIC_PARTS = {'eyes': 'data/sceneassets/heads/eyes_{}_1_textures.rx3',
+                 'hair': 'data/sceneassets/hair/hair_{}_1_0.rx3',
+                 'hair_textures': 'data/sceneassets/hair/hair_{}_1_textures.rx3',
+                 'hairlod': 'data/sceneassets/hairlod/hairlod_{}_1_0.rx3'}  # the manifest's list of each kind
 
 
 class _Builder:
-    def __init__(self, src: fifa14.Fifa14Source, selection: Selection, options: Options):
+    def __init__(self, src: fifa14.Fifa14Source, selection: Selection, options: Options, spool: str | None = None):
         self.src = src
         self.sel = selection
         self.opt = options
-        self.files: dict[str, bytes] = {}
+        self.files: MutableMapping = Spool(spool) if spool else {}
         self.warnings: list[str] = []
         self.nation_ids: set[int] = set()
         self.stadium_ids: set[int] = set()
+        # generic parts of the source (codes) a real face that lacks its own needs: see generic_parts()
+        self.generic_needed: dict[str, set[int]] = {'eyes': set(), 'hair': set()}
 
     # ---- files ----------------------------------------------------------------------------------------------
 
@@ -234,12 +348,23 @@ class _Builder:
             out[kind] = sorted(codes)
         return out
 
-    def all_equipment(self, codes: dict[str, list[int]], step=lambda x: x) -> dict[str, list[dict]]:
+    def all_equipment(self, codes: dict[str, list[int]], prog: '_Progress | None' = None, pool=None) -> dict[str, list[dict]]:
+        prog = prog or _Progress()
+        prog.step('equipment', sum(len(c) for c in codes.values()))
         out = {}
         for kind in gear_files.KINDS:
             names = gear_files.names(self.src, kind) if codes[kind] else {}
             listing = list(self.src.files.list(gear_files.folder(kind))) if codes[kind] else []
-            out[kind] = [x for x in (step(self.equipment(kind, c, names, listing)) for c in codes[kind]) if x]
+
+            def one(code, kind=kind, names=names, listing=listing):
+                prog.check()
+                prog.started(kind, code, names.get(code))
+                try:
+                    return self.equipment(kind, code, names, listing)
+                finally:
+                    prog.finished()
+            found = pool.map(one, codes[kind]) if pool else map(one, codes[kind])
+            out[kind] = [x for x in found if x]
         return out
 
     # ---- items ----------------------------------------------------------------------------------------------
@@ -423,6 +548,7 @@ class _Builder:
                     stored[path] = {'kind': kind, 'file': self._original(path, data)}
             if all(k in {v['kind'] for v in stored.values()} for k in fifa14.FACE_REQUIRED):
                 face = {'files': stored}
+                self._note_generic(pid, row, stored)
         raw = self.src.related_rows('playerid', pid)
         name_ids = {row.get(c) for c in ('firstnameid', 'lastnameid', 'commonnameid', 'playerjerseynameid')}
         names_rows = [r for i in sorted(n for n in name_ids if isinstance(n, int))
@@ -450,6 +576,36 @@ class _Builder:
                       for ln in self.src.player_links.get(pid, []) if pid in team_rosters.get(ln['teamid'], ())],
             'raw': raw,
         }
+
+    def _note_generic(self, pid: int, row: dict, stored: dict) -> None:
+        """A real face without its own eyes or hair: the source game shows the generic ones of the player's codes
+        (eyecolorcode, hairtypecode) in their place, so the package takes those generic files too (generic_parts)."""
+        paths = {p.lower() for p in stored}
+        eyes = isinstance(row.get('eyecolorcode'), int) and row['eyecolorcode'] > 0
+        if eyes and GENERIC_FACE_OWN['eyes'].format(pid) not in paths:
+            self.generic_needed['eyes'].add(row['eyecolorcode'])
+        hair = isinstance(row.get('hairtypecode'), int) and row['hairtypecode'] >= 0
+        if hair and not all(GENERIC_FACE_OWN[k].format(pid) in paths for k in ('hair', 'hair_textures')):
+            self.generic_needed['hair'].add(row['hairtypecode'])
+
+    def generic_parts(self) -> dict:
+        """{'eyes': {code: {file}}, 'hair': {code: {files: {kind: file}}}} of the generic parts noted by
+        _note_generic, as the source game has them (a patch may change them or add its own codes; a code the source
+        has no files of is left out)."""
+        out: dict = {'eyes': {}, 'hair': {}}
+        for code in sorted(self.generic_needed['eyes']):
+            path = GENERIC_PARTS['eyes'].format(code)
+            if self.src.files.exists(path) and (data := self._read(path, f'generic eyes {code}')) is not None:
+                out['eyes'][str(code)] = {'file': self._original(path, data), 'source_path': path}
+        for code in sorted(self.generic_needed['hair']):
+            files = {}
+            for kind in ('hair', 'hair_textures', 'hairlod'):
+                path = GENERIC_PARTS[kind].format(code)  # a code the source has no files of: left out, as there
+                if self.src.files.exists(path) and (data := self._read(path, f'generic hair {code}')) is not None:
+                    files[kind] = self._original(path, data)
+            if 'hair' in files and 'hair_textures' in files:
+                out['hair'][str(code)] = {'files': files}
+        return out
 
     def nation(self, nid: int) -> dict | None:
         row = self.src.nations.get(nid)
@@ -516,8 +672,43 @@ class _Builder:
             'raw': self.src.related_rows('stadiumid', sid, skip=STADIUM_RAW_SKIP),
         }
 
-    def build(self, progress=None) -> Package:
-        """progress(done, total), if given, is called after each league, team, player and stadium."""
+    def _names(self, kind: str, oid) -> str | None:
+        """The name the progress shows (never fails: the id is shown instead)."""
+        try:
+            if kind == 'player':
+                return self.src.player_display_name(oid)
+            if kind == 'team':
+                return self.src.team_display_name(oid)
+            if kind == 'league':
+                return self.src.league_display_name(oid)
+            if kind == 'stadium':
+                return self.src.stadium_display_name(oid)
+            if kind == 'nation':
+                return self.src.nation_name(oid)
+        except Exception:  # noqa: BLE001 - only the progress text
+            return None
+        return str(oid) if kind == 'adboard' else None
+
+    def _run(self, prog: _Progress, pool, step: str, kind: str, keys: list, fn) -> list:
+        """fn(key) of every key, in threads, the results in the order of the keys (None = left out)."""
+        prog.step(step, len(keys))
+
+        def one(key):
+            prog.check()
+            prog.started(kind, key, self._names(kind, key))
+            try:
+                return fn(key)
+            finally:
+                prog.finished()
+        found = pool.map(one, keys) if pool else map(one, keys)
+        return [x for x in found if x]
+
+    def build(self, progress=None, workers: int = 1, cancel: threading.Event | None = None) -> Package:
+        """progress(dict), if given, is told about each step and item (_Progress); workers: threads reading and
+        decoding the items (reading a file of the game, unpacking it and making the PNGs let the other threads run);
+        cancel: set it to stop (ExportCancelled)."""
+        prog = _Progress(progress, cancel)
+        prog.step('prepare')
         league_ids, player_ids = list(dict.fromkeys(self.sel.leagues)), self.sel.player_ids()
         self.nation_ids.update(self.sel.nations)
         self.stadium_ids.update(self.sel.stadiums)
@@ -529,23 +720,24 @@ class _Builder:
         gear_codes = self.equipment_codes(list(self.sel.teams), player_ids)
         total = len(league_ids) + len(self.sel.teams) + len(player_ids) + stadium_count + len(board_names) + \
             sum(len(c) for c in gear_codes.values())
-        done = 0
-
-        def step(item):
-            nonlocal done
-            done += 1
-            if progress:
-                progress(done, total)
-            return item
-
-        leagues = [x for x in (step(self.league(lid)) for lid in league_ids) if x]
-        teams = [x for x in (step(self.team(tid, pick)) for tid, pick in self.sel.teams.items()) if x]
-        rosters = {t['source_id']: {r['player_id'] for r in t['roster']} for t in teams}
-        players = [x for x in (step(self.player(pid, rosters)) for pid in player_ids) if x]
-        stadiums = [x for x in (step(self.stadium(sid)) for sid in sorted(self.stadium_ids)) if x]
-        nations = [x for x in (self.nation(nid) for nid in sorted(self.nation_ids)) if x]
-        boards = [x for x in (step(self.adboard(name)) for name in board_names) if x]
-        gear = self.all_equipment(gear_codes, step)
+        prog.send(total=total)
+        pool = ThreadPoolExecutor(max_workers=workers) if workers > 1 else None
+        try:
+            leagues = self._run(prog, pool, 'leagues', 'league', league_ids, self.league)
+            picks = self.sel.teams
+            teams = self._run(prog, pool, 'teams', 'team', list(picks), lambda tid: self.team(tid, picks[tid]))
+            rosters = {t['source_id']: {r['player_id'] for r in t['roster']} for t in teams}
+            players = self._run(prog, pool, 'players', 'player', player_ids, lambda pid: self.player(pid, rosters))
+            generic = self.generic_parts()
+            stadiums = self._run(prog, pool, 'stadiums', 'stadium', sorted(self.stadium_ids), self.stadium)
+            nation_ids = sorted(self.nation_ids)  # known only now: the leagues, players and stadiums add theirs
+            prog.send(total=prog.state['total'] + len(nation_ids))
+            nations = self._run(prog, pool, 'nations', 'nation', nation_ids, self.nation)
+            boards = self._run(prog, pool, 'adboards', 'adboard', board_names, self.adboard)
+            gear = self.all_equipment(gear_codes, prog, pool)
+        finally:
+            if pool:
+                pool.shutdown(wait=True, cancel_futures=True)
         credits = {k: v for k, v in {'text': (self.opt.credits or '').strip() or None,
                                      'url': normalize_link(self.opt.credits_url)}.items() if v}
         manifest = {
@@ -571,13 +763,22 @@ class _Builder:
             'nations': nations,
             'stadiums': stadiums,
             'adboards': boards,
+            'generic_parts': generic,
             **{EQUIPMENT_LISTS[k]: gear[k] for k in gear_files.KINDS},
         }
         return Package(manifest, self.files, self.warnings)
 
 
-def build(src: fifa14.Fifa14Source, selection: Selection, options: Options | None = None, progress=None) -> Package:
-    return _Builder(src, selection, options or Options()).build(progress)
+def build(src: fifa14.Fifa14Source, selection: Selection, options: Options | None = None, progress=None,
+          workers: int = 1, cancel: threading.Event | None = None, spool: str | None = None) -> Package:
+    """spool: a folder for the files instead of the memory (Package.files is a Spool; close() it when done)."""
+    builder = _Builder(src, selection, options or Options(), spool)
+    try:
+        return builder.build(progress, workers, cancel)
+    except BaseException:
+        if isinstance(builder.files, Spool):
+            builder.files.close()
+        raise
 
 
 def safe_name(name: str) -> bool:
@@ -586,15 +787,100 @@ def safe_name(name: str) -> bool:
         and '\\' not in name
 
 
-def write(package: Package, path: str) -> None:
-    """Writes the package zip atomically (a .tmp file renamed at the end)."""
+class _Ready:
+    """A 'compressor' that hands zipfile the bytes already compressed by a thread (zipfile still counts the size and
+    the CRC of the original bytes itself)."""
+
+    def __init__(self, data: bytes):
+        self.data = data
+
+    def compress(self, _):
+        data, self.data = self.data, b''
+        return data
+
+    def flush(self):
+        return b''
+
+
+def _deflate(data: bytes) -> bytes:
+    c = zlib.compressobj(COMPRESS_LEVEL, zlib.DEFLATED, -15)  # raw deflate, as in a zip
+    return c.compress(data) + c.flush()
+
+
+def write(package: Package, path: str, progress=None, workers: int = 1, cancel: threading.Event | None = None,
+          memory_budget: int = 512 * 2 ** 20) -> None:
+    """Writes the package zip atomically (a .tmp file renamed at the end). progress(dict): step 'write' with
+    step_done/step_total (files) and bytes_done/bytes_total; workers: threads compressing the next files while one is
+    written (about memory_budget bytes compressed and waiting at most); cancel: stops it (ExportCancelled, no file)."""
+    prog = _Progress(progress, cancel)
+    names = sorted(package.files)
+    for name in names:
+        if not safe_name(name):
+            raise ValueError(f'unsafe file name in package: {name}')
+    manifest = json.dumps(package.manifest, ensure_ascii=False, indent=1).encode('utf-8')
+    files = package.files
+    items = [MANIFEST] + names
+    sizes = {MANIFEST: len(manifest), **{n: _size(files, n) for n in names}}
+
+    def read(name):
+        return manifest if name == MANIFEST else files[name]
+    prog.send(step='write', step_done=0, step_total=len(items), item=None, bytes_done=0,
+              bytes_total=sum(sizes.values()))
     folder = os.path.dirname(os.path.abspath(path))
     os.makedirs(folder, exist_ok=True)
     tmp = path + '.tmp'
-    with zipfile.ZipFile(tmp, 'w', compression=zipfile.ZIP_DEFLATED) as z:
-        z.writestr(MANIFEST, json.dumps(package.manifest, ensure_ascii=False, indent=1))
-        for name, data in sorted(package.files.items()):
-            if not safe_name(name):
-                raise ValueError(f'unsafe file name in package: {name}')
-            z.writestr(name, data)
-    os.replace(tmp, path)
+    pool = ThreadPoolExecutor(max_workers=workers) if workers > 1 else None
+    try:
+        with zipfile.ZipFile(tmp, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=COMPRESS_LEVEL) as z:
+            for i, (name, data, packed) in enumerate(_compressed(items, read, sizes, pool, workers, memory_budget)):
+                prog.check()
+                prog.send(item={'kind': 'file', 'id': None, 'name': name})
+                info = zipfile.ZipInfo(name, date_time=datetime.datetime.now().timetuple()[:6])
+                info.compress_type, info.compress_level = zipfile.ZIP_DEFLATED, COMPRESS_LEVEL
+                info.external_attr = 0o600 << 16
+                info.file_size = len(data)
+                with z.open(info, 'w', force_zip64=len(data) > zipfile.ZIP64_LIMIT // 2) as out:
+                    if packed is not None and hasattr(out, '_compressor'):
+                        out._compressor = _Ready(packed)  # noqa: SLF001 - compressed by a thread (see _Ready)
+                    out.write(data)
+                with prog.lock:
+                    prog.state['step_done'] = i + 1
+                    prog.state['bytes_done'] += len(data)
+                prog.send()
+        os.replace(tmp, path)
+    except BaseException:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+        raise
+    finally:
+        if pool:
+            pool.shutdown(wait=True, cancel_futures=True)
+
+
+def _compressed(names: list[str], read, sizes: dict[str, int], pool, workers: int, budget: int):
+    """(name, data, compressed or None) in order; with a pool, the next files are read and compressed ahead in
+    threads (about `budget` bytes waiting at most)."""
+    if pool is None:
+        for name in names:
+            yield name, read(name), None
+        return
+
+    def load(name):
+        data = read(name)
+        return data, _deflate(data)
+    pending: deque = deque()
+    waiting = 0
+    it = iter(names)
+    while True:
+        while len(pending) < workers * 4 and (not pending or waiting < budget):
+            name = next(it, None)
+            if name is None:
+                break
+            pending.append((name, pool.submit(load, name)))
+            waiting += sizes[name]
+        if not pending:
+            return
+        name, future = pending.popleft()
+        waiting -= sizes[name]
+        data, packed = future.result()
+        yield name, data, packed

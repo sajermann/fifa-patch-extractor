@@ -10,10 +10,12 @@ import { Label } from '@/components/ui/label'
 import { api, exportUrl } from '@/api/client'
 import type { BasketForm, ExportJob } from '@/api/types'
 import { Badge, Section } from '@/components/common/detail'
+import { ExportProgressDialog } from '@/components/common/ExportProgress'
 import { BasketTree, TreeLegend } from '@/components/common/selectionTree'
 import { useI18n } from '@/i18n'
 import { useBasketOp, useBasketView, useStatus } from '@/state/queries'
 import { usePageLabel } from '@/lib/back'
+import { clock } from '@/lib/clock'
 
 const fmtSize = (n: number) => (n > 1e6 ? `${(n / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1e3))} KB`)
 const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleString() : '—')
@@ -73,9 +75,10 @@ function ExportForm({ form, disabled }: { form: BasketForm; disabled: boolean })
         const next = await api.exportJob(job.id)
         setJob(next)
         if (next.state === 'done') {
-          toast.success(t('export.done', { name: next.result?.name ?? '' }))
+          toast.success(t('export.done', { name: next.result?.name ?? '' }), { description: t('export.doneIn', { time: clock(next.elapsed) }) })
           void qc.invalidateQueries({ queryKey: ['exports'] })
-        } else if (next.state === 'error') toast.error(t('export.failed', { error: next.error ?? '' }))
+        } else if (next.state === 'cancelled') toast.info(t('export.stopped'))
+        else if (next.state === 'error') toast.error(t('export.failed', { error: next.error ?? '' }))
       } catch (e) {
         toast.error((e as Error).message)
       }
@@ -119,13 +122,10 @@ function ExportForm({ form, disabled }: { form: BasketForm; disabled: boolean })
         <Button disabled={disabled || running} onClick={() => start.mutate()}>
           {running ? <Loader2 className="animate-spin" /> : <Package />} {t('export.start')}
         </Button>
-        {job?.state === 'running' && job.total > 0 && (
-          <span className="text-sm text-muted-foreground tabular-nums">{t('export.progress', { done: job.done, total: job.total })}</span>
-        )}
         {job?.state === 'done' && job.result && (
           <span className="flex items-center gap-2 text-sm">
             <Badge tone="ok">{t('export.ready')}</Badge>
-            {job.result.name} · {fmtSize(job.result.size)}
+            {job.result.name} · {fmtSize(job.result.size)} · {t('export.doneIn', { time: clock(job.elapsed) })}
             <Button size="sm" variant="outline" asChild>
               <a href={exportUrl(job.result.name)} download>
                 <Download /> {t('export.download')}
@@ -144,6 +144,7 @@ function ExportForm({ form, disabled }: { form: BasketForm; disabled: boolean })
           </ul>
         </div>
       )}
+      <ExportProgressDialog job={job} />
     </Section>
   )
 }

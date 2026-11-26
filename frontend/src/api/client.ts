@@ -5,6 +5,7 @@ import type {
   Config,
   ExportFile,
   ExportJob,
+  MachineInfo,
   LeagueDetail,
   NationDetail,
   NationRow,
@@ -113,6 +114,10 @@ export const api = {
 
   startExport: () => post<ExportJob>('/api/export'),
   exportJob: (id: string) => get<ExportJob>(`/api/export/${id}`),
+  /** Asks the running export to stop: it writes nothing. */
+  cancelExport: (id: string) => post<ExportJob>(`/api/export/${id}/cancel`),
+  /** Cores and memory of this machine and the export's defaults. */
+  machine: () => get<MachineInfo>('/api/machine'),
   exports: () => get<ExportFile[]>('/api/exports'),
   deleteExport: (name: string) => request<{ ok: boolean }>('DELETE', `/api/exports/${encodeURIComponent(name)}`),
   openExportsFolder: () => post<{ path: string }>('/api/exports/open-folder'),

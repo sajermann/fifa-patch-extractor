@@ -4,6 +4,7 @@ import datetime
 import json
 import logging
 import os
+import shutil
 import threading
 import time
 import uuid
@@ -408,17 +409,25 @@ class Selections:
 # ---- export jobs ------------------------------------------------------------------------------------------------
 
 class ExportJob:
+    """One export: where it is (package.EXPORT_STEPS, the item, the items and bytes done) and its clock."""
+
     def __init__(self):
         self.id = uuid.uuid4().hex[:12]
-        self.state = 'running'  # running | done | error
-        self.done = 0
-        self.total = 0
+        self.state = 'running'  # running | done | error | cancelled
+        self.progress: dict = {'step': None, 'step_done': 0, 'step_total': 0, 'done': 0, 'total': 0, 'item': None,
+                               'bytes_done': 0, 'bytes_total': 0}
+        self.workers = 1
         self.error: str | None = None
         self.result: dict | None = None
+        self.started_at = time.time()
+        self.finished_at: float | None = None
+        self.cancel = threading.Event()
 
     def as_dict(self) -> dict:
-        return {'id': self.id, 'state': self.state, 'done': self.done, 'total': self.total, 'error': self.error,
-                'result': self.result}
+        return {'id': self.id, 'state': self.state, 'steps': list(package.EXPORT_STEPS), **self.progress,
+                'workers': self.workers, 'stopping': self.cancel.is_set() and self.state == 'running',
+                'elapsed': round((self.finished_at or time.time()) - self.started_at, 1),
+                'error': self.error, 'result': self.result}
 
 
 class Exports:
@@ -429,27 +438,48 @@ class Exports:
     def running(self) -> ExportJob | None:
         return next((j for j in self.jobs.values() if j.state == 'running'), None)
 
-    def start(self, src, selection, options, folder: str, file_name: str) -> ExportJob:
+    def start(self, src, selection, options, folder: str, file_name: str, workers: int = 1) -> ExportJob:
         with self.lock:
             if self.running():
                 raise RuntimeError('busy')
             job = ExportJob()
+            job.workers = workers
             self.jobs = {job.id: job}  # only the last job is kept
+        for name in os.listdir(folder) if os.path.isdir(folder) else []:  # parts of an export the app never ended
+            if name.startswith('.') and name.endswith('.parts'):
+                shutil.rmtree(os.path.join(folder, name), ignore_errors=True)
         threading.Thread(target=self._run, args=(job, src, selection, options, folder, file_name), daemon=True).start()
         return job
 
     def _run(self, job, src, selection, options, folder, file_name):
-        def progress(done, total):
-            job.done, job.total = done, total
+        def progress(state):
+            job.progress = state
+        # the files wait in a folder beside the package, not in the memory (a whole patch passes tens of GB)
+        spool = os.path.join(folder, f'.{file_name}.parts')
+        pkg = None
         try:
-            pkg = package.build(src, selection, options, progress)
+            pkg = package.build(src, selection, options, progress, workers=job.workers, cancel=job.cancel,
+                                spool=spool)
+            items = dict(job.progress)
             path = os.path.join(folder, file_name)
-            package.write(pkg, path)
+
+            def writing(state):  # the items' count stays as it ended: the write step has its own
+                job.progress = {**state, 'done': items['done'], 'total': items['total']}
+            package.write(pkg, path, writing, workers=job.workers, cancel=job.cancel)
             m = pkg.manifest
             job.result = {'name': file_name, 'path': path, 'size': os.path.getsize(path), 'warnings': pkg.warnings,
                           'counts': {k: len(m[k]) for k in ('nations', 'leagues', 'teams', 'players', 'stadiums', 'adboards',
                                                                    'boots', 'gloves', 'balls')}}
             job.state = 'done'
+            log.info('export: %s in %.1f s with %s thread(s)', file_name, time.time() - job.started_at, job.workers)
+        except package.ExportCancelled:
+            log.info('export stopped by the user')
+            job.state = 'cancelled'
         except Exception as e:  # noqa: BLE001 - shown on the export screen; the cause goes to the log
             log.exception('export failed')
             job.state, job.error = 'error', f'{type(e).__name__}: {e}'
+        finally:
+            if pkg is not None and isinstance(pkg.files, package.Spool):
+                pkg.files.close()
+            shutil.rmtree(spool, ignore_errors=True)
+            job.finished_at = time.time()

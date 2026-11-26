@@ -16,7 +16,8 @@ from pydantic import BaseModel
 
 from . import settings  # noqa: I001 - first: it puts the core folder on the path
 
-from fpx import equipment, fifa14, images, kitfonts, kitprint, package, preview, rx3, stadium3d  # noqa: E402
+from fpx import (equipment, fifa14, images, kitfonts, kitprint, package, preview, rx3, stadium3d,  # noqa: E402
+                 workers)
 
 from . import dialogs, tree, views  # noqa: E402
 from .state import Basket, Exports, Selections, SourceHolder
@@ -66,6 +67,16 @@ class SettingsBody(BaseModel):
     language: Optional[settings.Language] = None
     game_language: Optional[str] = None
     output_dir: Optional[str] = None
+    export_cores: Optional[int] = None  # null = the default
+    export_memory_percent: Optional[int] = None
+
+
+@app.get('/api/machine')
+def machine():
+    """What an export may use on this machine (fpx.workers.describe): cores and memory the system reports (None
+    when it does not tell), the defaults and the threads the saved settings give."""
+    cfg = settings.load()
+    return workers.describe(cfg.export_cores, cfg.export_memory_percent)
 
 
 @app.put('/api/settings')
@@ -75,7 +86,7 @@ def put_settings(body: SettingsBody):
     if 'output_dir' in fields and fields['output_dir'] and not os.path.isdir(fields['output_dir']):
         raise ApiError(400, 'folder_not_found', fields['output_dir'])
     reload = 'game_language' in fields and fields['game_language'] != cfg.game_language
-    cfg = settings.save(cfg.model_copy(update=fields))
+    cfg = settings.save(settings.Config.model_validate({**cfg.model_dump(), **fields}))  # validated: the ranges
     if reload and cfg.source_dir and source.state != 'loading':
         source.load(cfg.source_dir, cfg.game_language)
     return cfg.model_dump()
@@ -1026,11 +1037,23 @@ def start_export():
                               include_adboards=bool(form.get('include_adboards', True)),
                               include_equipment=bool(form.get('include_equipment', True)),
                               tool_version=settings.APP_VERSION)
-    folder = settings.load().exports_dir()
+    cfg = settings.load()
     try:
-        job = exports.start(src, selection, options, folder, _file_name(form.get('patch_name', '')))
+        job = exports.start(src, selection, options, cfg.exports_dir(), _file_name(form.get('patch_name', '')),
+                            workers.plan(cfg.export_cores, cfg.export_memory_percent))
     except RuntimeError:
         raise ApiError(409, 'busy')
+    return job.as_dict()
+
+
+@app.post('/api/export/{job_id}/cancel')
+def cancel_export(job_id: str):
+    """Asks the running export to stop: it stops before the next item or file and writes nothing."""
+    job = exports.jobs.get(job_id)
+    if job is None:
+        raise ApiError(404, 'not_found')
+    if job.state == 'running':
+        job.cancel.set()
     return job.as_dict()
 
 

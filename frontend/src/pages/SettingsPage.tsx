@@ -1,14 +1,17 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { FolderOpen, RotateCcw } from 'lucide-react'
+import { FolderOpen, Loader2, RotateCcw } from 'lucide-react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api } from '@/api/client'
-import type { Config } from '@/api/types'
+import type { Config, Status } from '@/api/types'
 import { Facts, Section } from '@/components/common/detail'
 import { LANGS, useI18n, type Lang } from '@/i18n'
 import { APP_NAME, APP_VERSION, AUTHOR_GITHUB, AUTHOR_NAME, REPO_URL } from '@/lib/about'
 import { useTheme } from '@/lib/theme'
+import { exportResourcesErrors, plannedThreads, useMachine, type ExportResourcesValue } from '@/lib/exportResources'
 import { useStatus } from '@/state/queries'
 
 export function SettingsPage() {
@@ -99,6 +102,7 @@ export function SettingsPage() {
           )}
         </div>
       </Section>
+      {status && <ResourcesSection status={status} />}
       <Section title={t('settings.about')}>
         <Facts
           items={[
@@ -111,5 +115,79 @@ export function SettingsPage() {
         <p className="mt-4 text-xs text-muted-foreground">{t('settings.disclaimer')}</p>
       </Section>
     </div>
+  )
+}
+
+/** How much of the machine an export may use: cores and percent of the memory (empty = the defaults). The Studios'
+ * "build performance" card (BuildResourcesFields), with the extractor's Section and the export's threads. */
+function ResourcesSection({ status }: { status: Status }) {
+  const { t } = useI18n()
+  const qc = useQueryClient()
+  const machine = useMachine()
+  const [value, setValue] = useState<ExportResourcesValue>({
+    export_cores: status.config.export_cores ?? null,
+    export_memory_percent: status.config.export_memory_percent ?? null,
+  })
+  const [saving, setSaving] = useState(false)
+  const errors = exportResourcesErrors(machine, value)
+  const cores = machine?.cores
+  const [low, high] = machine?.memory_percent_range ?? [10, 90]
+  const memoryGb = machine?.memory_mb ? (machine.memory_mb / 1024).toFixed(1) : null
+  const number = (text: string) => (text.trim() === '' ? null : Number(text))
+  const save = async () => {
+    setSaving(true)
+    try {
+      await api.saveSettings({ export_cores: value.export_cores ?? null, export_memory_percent: value.export_memory_percent ?? null })
+      await qc.invalidateQueries({ queryKey: ['status'] })
+      await qc.invalidateQueries({ queryKey: ['machine'] })
+      toast.success(t('settings.saved'))
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setSaving(false)
+    }
+  }
+  return (
+    <Section title={t('exportResources.title')}>
+      <p className="mb-4 text-sm text-muted-foreground">{t('exportResources.description')}</p>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium">{t('exportResources.cores')}</p>
+          <Input
+            type="number"
+            min={1}
+            max={cores ?? undefined}
+            value={value.export_cores ?? ''}
+            placeholder={t('exportResources.automatic', { value: machine?.default_cores ?? 1 })}
+            onChange={(e) => setValue({ ...value, export_cores: number(e.target.value) })}
+          />
+          <p className="text-xs text-muted-foreground">
+            {cores ? t('exportResources.coresHint', { cores, default: machine.default_cores }) : t('exportResources.coresUnknown')}
+          </p>
+          {errors.cores && <p className="text-xs text-destructive">{t(errors.cores, { max: cores ?? 1 })}</p>}
+        </div>
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium">{t('exportResources.memory')}</p>
+          <Input
+            type="number"
+            min={low}
+            max={high}
+            value={value.export_memory_percent ?? ''}
+            placeholder={t('exportResources.automatic', { value: `${machine?.default_memory_percent ?? 50}%` })}
+            onChange={(e) => setValue({ ...value, export_memory_percent: number(e.target.value) })}
+          />
+          <p className="text-xs text-muted-foreground">
+            {memoryGb ? t('exportResources.memoryHint', { memory: memoryGb, low, high }) : t('exportResources.memoryUnknown')}
+          </p>
+          {errors.memory && <p className="text-xs text-destructive">{t(errors.memory, { low, high })}</p>}
+        </div>
+      </div>
+      {machine && !errors.cores && !errors.memory && (
+        <p className="mt-4 text-sm text-muted-foreground">{t('exportResources.summary', { workers: plannedThreads(machine, value) })}</p>
+      )}
+      <Button className="mt-4" onClick={() => void save()} disabled={saving || !!errors.cores || !!errors.memory}>
+        {saving && <Loader2 className="animate-spin" />} {t('settings.save')}
+      </Button>
+    </Section>
   )
 }

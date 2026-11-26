@@ -162,8 +162,12 @@ def test_stadiums(client):
     assert client.get('/api/stadiums', params={'in_basket': 'yes'}).json()['total'] == 1
     job = client.post('/api/export').json()  # a stadium alone is enough to export
     wait(lambda: client.get(f'/api/export/{job["id"]}').json()['state'] != 'running')
-    result = client.get(f'/api/export/{job["id"]}').json()['result']
+    ended = client.get(f'/api/export/{job["id"]}').json()
+    result = ended['result']
     assert result['counts']['stadiums'] == 1 and result['counts']['teams'] == 0
+    assert ended['step'] == 'write' and ended['step_done'] == ended['step_total'] > 1  # the zip has its own step
+    assert ended['done'] == ended['total'] == 2  # the stadium and its country
+    assert ended['bytes_done'] == ended['bytes_total'] > 0 and ended['elapsed'] >= 0 and ended['workers'] >= 1
     client.delete(f'/api/exports/{result["name"]}')
     assert op('remove_stadium', id=fakegame.STADIUM)['stadiums'] == 0
 
@@ -405,3 +409,12 @@ def test_team_and_league_parts(client):
     assert [b['name'] for b in lg['adboards']] == [f'specificadboard_0_{fakegame.LEAGUE}_0_0'] and lg['basket_boards'] == 'none'
     client.post('/api/basket', json={'op': 'tree', 'args': {'key': f'league:{fakegame.LEAGUE}', 'mode': 'all'}})
     assert client.get(f'/api/leagues/{fakegame.LEAGUE}').json()['basket_boards'] == 'full'
+
+
+def test_export_settings_stay_in_range(client):
+    machine = client.get('/api/machine').json()
+    assert {'cores', 'memory_mb', 'default_cores', 'workers'} <= set(machine)
+    cfg = client.put('/api/settings', json={'export_cores': 10_000, 'export_memory_percent': 1}).json()
+    assert cfg['export_cores'] == (machine['cores'] or 1) and cfg['export_memory_percent'] == 10
+    cfg = client.put('/api/settings', json={'export_cores': None, 'export_memory_percent': None}).json()
+    assert cfg['export_cores'] is None and cfg['export_memory_percent'] is None

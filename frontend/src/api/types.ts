@@ -20,6 +20,20 @@ export interface Config {
   recent_sources: string[]
   game_language: string
   output_dir: string | null
+  /** what an export may use (null = the defaults) */
+  export_cores: number | null
+  export_memory_percent: number | null
+}
+
+/** GET /api/machine: this machine and the export's defaults (fpx.workers.describe). */
+export interface MachineInfo {
+  cores: number | null
+  memory_mb: number | null
+  default_cores: number
+  default_memory_percent: number
+  memory_percent_range: [number, number]
+  worker_memory_mb: number
+  workers: number
 }
 
 export interface BasketCounts {
@@ -451,11 +465,27 @@ export interface SavedSelection {
   players: number
 }
 
+export type ExportStep = 'prepare' | 'leagues' | 'teams' | 'players' | 'stadiums' | 'nations' | 'adboards' | 'equipment' | 'write'
+
+/** An export and where it is (fpx.package.EXPORT_STEPS). */
 export interface ExportJob {
   id: string
-  state: 'running' | 'done' | 'error'
+  state: 'running' | 'done' | 'error' | 'cancelled'
+  steps: ExportStep[]
+  step: ExportStep | null
+  /** items or files of the current step */
+  step_done: number
+  step_total: number
+  /** items of every step but the zip (the countries join the total once known) */
   done: number
   total: number
+  /** the item (or zip file) the export is on */
+  item: { kind: string; id: number | string | null; name: string | null } | null
+  bytes_done: number
+  bytes_total: number
+  elapsed: number
+  workers: number
+  stopping: boolean
   error: string | null
   result: {
     name: string

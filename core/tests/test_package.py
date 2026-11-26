@@ -287,3 +287,100 @@ def test_equipment_items(src):
     assert glove['name'] == 'G01' and glove['wearers'] == sum(p['gkglovetypecode'] == fakegame.GAME_GLOVE for p in src.players.values()) and glove['listed'] is None
     ball = equipment.items(src, 'ball')[fakegame.GAME_BALL]
     assert ball['name'] == 'L01' and ball['wearers'] == 1 and ball['listed'] is True
+
+
+def _everything(src):
+    return Selection(leagues=[fakegame.LEAGUE], teams={fakegame.TEAM: TeamPick(_roster(src, fakegame.TEAM), True)},
+                     stadiums=[fakegame.STADIUM])
+
+
+def _same(pkg):
+    m = dict(pkg.manifest)
+    m.pop('created_at')
+    return m, pkg.files, sorted(pkg.warnings)
+
+
+def test_threads_give_the_same_package_and_report_every_step(src):
+    one = package.build(src, _everything(src))
+    seen = []
+    many = package.build(src, _everything(src), progress=seen.append, workers=4)
+    assert _same(one) == _same(many)
+    steps = list(dict.fromkeys(s['step'] for s in seen))
+    assert steps == [s for s in package.EXPORT_STEPS if s != 'write']
+    last = seen[-1]
+    assert last['done'] == last['total'] > 0  # the countries counted too
+    players = [s['item'] for s in seen if s['step'] == 'players' and s['item']]
+    assert {p['id'] for p in players} == set(_roster(src, fakegame.TEAM)) and all(p['name'] for p in players)
+
+
+def test_write_in_threads_gives_a_valid_zip(src, tmp_path):
+    pkg = package.build(src, _everything(src))
+    pkg.files['big.bin'] = os.urandom(300_000) + b'\0' * 2_000_000  # some compress, some do not
+    seen = []
+    path = os.path.join(tmp_path, 'p.fifapkg.zip')
+    package.write(pkg, path, progress=seen.append, workers=4, memory_budget=1)
+    with zipfile.ZipFile(path) as z:
+        assert z.testzip() is None
+        assert json.loads(z.read(package.MANIFEST)) == pkg.manifest
+        assert {n: z.read(n) for n in z.namelist() if n != package.MANIFEST} == pkg.files
+        assert z.getinfo('big.bin').compress_size < 1_000_000
+    last = seen[-1]
+    assert last['step'] == 'write' and last['step_done'] == last['step_total'] == len(pkg.files) + 1
+    assert last['bytes_done'] == last['bytes_total']
+
+
+def test_a_stopped_export_leaves_no_file(src, tmp_path):
+    import threading
+    cancel = threading.Event()
+
+    def stop(state):
+        if state['step'] == 'players' and state['step_done'] >= 1:
+            cancel.set()
+    with pytest.raises(package.ExportCancelled):
+        package.build(src, _everything(src), progress=stop, workers=2, cancel=cancel)
+    pkg = package.build(src, _everything(src))
+    path = os.path.join(tmp_path, 'p.fifapkg.zip')
+    cancel = threading.Event()
+    with pytest.raises(package.ExportCancelled):
+        package.write(pkg, path, progress=lambda s: s['step_done'] >= 2 and cancel.set(), workers=2, cancel=cancel)
+    assert os.listdir(tmp_path) == []
+
+
+def test_files_kept_on_the_disk_give_the_same_zip(src, tmp_path):
+    spool = os.path.join(tmp_path, 'parts')
+    in_memory = package.build(src, _everything(src))
+    on_disk = package.build(src, _everything(src), workers=3, spool=spool)
+    assert isinstance(on_disk.files, package.Spool) and len(os.listdir(spool)) == len(on_disk.files)
+    assert dict(on_disk.files.items()) == in_memory.files
+    path = os.path.join(tmp_path, 'p.fifapkg.zip')
+    package.write(on_disk, path, workers=3)
+    on_disk.files.close()
+    assert not os.path.exists(spool)
+    with zipfile.ZipFile(path) as z:
+        assert {n: z.read(n) for n in z.namelist() if n != package.MANIFEST} == in_memory.files
+
+
+def test_a_face_without_its_eyes_and_hair_takes_the_generic_ones_of_the_source(tmp_path):
+    root = fakegame.build(str(tmp_path / 'game'))
+    assets = os.path.join(root, 'Game', 'data', 'sceneassets')
+    os.remove(os.path.join(assets, 'heads', f'eyes_{fakegame.STAR}_0_textures.rx3'))  # the face lacks its eyes
+    generic = {'heads/eyes_9_1_textures.rx3': b'generic eyes 9', 'hair/hair_301_1_0.rx3': b'generic hair 301',
+               'hair/hair_301_1_textures.rx3': b'generic hair 301 textures',
+               'hairlod/hairlod_301_1_0.rx3': b'generic hairlod 301'}
+    for name, data in generic.items():
+        os.makedirs(os.path.dirname(os.path.join(assets, name)), exist_ok=True)
+        with open(os.path.join(assets, name), 'wb') as f:
+            f.write(data)
+    src = Fifa14Source(root)
+    src.players[fakegame.STAR]['eyecolorcode'] = 9
+    src.players[fakegame.STAR]['hairtypecode'] = 301  # his hair has no textures file: the generic one goes
+    pkg = package.build(src, Selection(players=[fakegame.STAR, fakegame.KEEPER]))
+    parts = pkg.manifest['generic_parts']
+    assert pkg.files[parts['eyes']['9']['file']] == b'generic eyes 9'
+    hair = parts['hair']['301']['files']
+    assert {k: pkg.files[v] for k, v in hair.items()} == {'hair': b'generic hair 301',
+                                                           'hair_textures': b'generic hair 301 textures',
+                                                           'hairlod': b'generic hairlod 301'}
+    assert not pkg.warnings  # the keeper has no real face: nothing of his goes
+    # a whole face needs none
+    assert package.build(src, Selection(players=[fakegame.KEEPER])).manifest['generic_parts'] == {'eyes': {}, 'hair': {}}

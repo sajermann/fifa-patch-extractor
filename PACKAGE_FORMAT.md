@@ -106,6 +106,18 @@ values as stored (integers already include the field's range offset, as the game
 | `teams[]` | links to the teams of this package whose roster has the player: `team_id`, `jersey_number`, `position`, `position_name` |
 | `raw` | rows with this `playerid` (every `teamplayerlinks` row of the source, too) + the `playernames` rows of its names |
 
+### Generic parts
+
+`generic_parts`: the source game's generic eyes and hair that a real face without its own uses (the game shows the
+generic part of the player's `eyecolorcode` / `hairtypecode` in its place; a patch may change these files or add
+codes of its own). Only the codes of the exported players whose `face` lacks its eyes or its hair. Optional (packages
+made before it have none).
+
+| field | meaning |
+|---|---|
+| `eyes` | `{"<eyecolorcode>": {file, source_path}}` (`heads/eyes_<code>_1_textures.rx3`) |
+| `hair` | `{"<hairtypecode>": {files: {hair, hair_textures, hairlod?}}}` (`hair/hair_<code>_1_0.rx3`, `hair_<code>_1_textures.rx3`, `hairlod/hairlod_<code>_1_0.rx3`) |
+
 ### Nation
 
 The countries picked on their own and every country referenced by the leagues, teams, players and stadiums.
