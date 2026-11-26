@@ -148,6 +148,9 @@ export const en: Record<MessageKey, string> = {
 
   'basket.add': 'Add to basket',
   'basket.remove': 'Remove from basket',
+  'basket.goesWith': 'Goes with {names}',
+  'basket.goesWithMore': 'Goes with {names} and {count} more',
+  'basket.goesWithHint': '{text}. To take it out, uncheck it in the team, league or player.',
 
   'tab.data': 'Data',
   'section.countriesCount': 'Countries ({count})',

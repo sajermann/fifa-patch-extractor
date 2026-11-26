@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown, Search, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, ChevronsUpDown, Loader2, Search, X } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -157,7 +157,9 @@ export function Pager({ page, pages, total, size, onPage }: { page: number; page
 export const LIST_PAGE = 'flex h-full min-h-[24rem] flex-col gap-4'
 
 /** Table that fills the rest of the page and scrolls inside (the header sticks). */
-export function ScrollTable({ children }: { children: ReactNode }) {
+/** A list's table, scrolling under its fixed header; `loading` = its rows are on the way (a spinner below the header). */
+export function ScrollTable({ children, loading }: { children: ReactNode; loading?: boolean }) {
+  const { t } = useI18n()
   return (
     <div className="min-h-0 flex-1 overflow-auto rounded-md border">
       <table
@@ -169,6 +171,11 @@ export function ScrollTable({ children }: { children: ReactNode }) {
       >
         {children}
       </table>
+      {loading && (
+        <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> {t('common.loading')}
+        </div>
+      )}
     </div>
   )
 }

@@ -252,6 +252,44 @@ def test_adboards(client):
     assert op('remove_adboard', id='adboard_3_0')['adboards'] == 0
 
 
+def test_equipment_pictures_saved_on_disk(tmp_path, monkeypatch):
+    """A drawn picture is kept on disk by its files' content: the second time it is not drawn again."""
+    from fpxapi import main
+    monkeypatch.setattr(main, 'DRAWN_DIR', str(tmp_path))
+    calls = []
+
+    def draw():
+        calls.append(1)
+        return b'PNG'
+    assert main._drawn_on_disk('boot|1|128|a|b', draw) == b'PNG'
+    assert main._drawn_on_disk('boot|1|128|a|b', draw) == b'PNG' and len(calls) == 1
+    assert main._drawn_on_disk('boot|1|128|a|changed', draw) == b'PNG' and len(calls) == 2
+    assert main._drawn_on_disk('ball|2|128|a|b', lambda: None) is None  # cannot be drawn: remembered as such
+    assert main._drawn_on_disk('ball|2|128|a|b', draw) is None and len(calls) == 2
+
+
+def test_lists_show_what_goes_with_a_team(client):
+    """A team of the basket takes its boards, stadium and ball: their lists show them as going with it."""
+    team_name = client.get(f'/api/teams/{fakegame.TEAM}').json()['name']
+    client.post('/api/basket', json={'op': 'add_team', 'args': {'id': fakegame.TEAM}})
+    boards = {b['id']: b for b in client.get('/api/adboards').json()['items']}
+    mine = boards[f'specificadboard_{fakegame.TEAM}_0_0_1']
+    assert mine['in_basket'] is False and mine['basket_via'] == {'names': [team_name], 'total': 1}
+    assert boards['adboard_3_0']['basket_via'] is None
+    assert client.get('/api/adboards', params={'in_basket': 'yes'}).json()['total'] == 2
+    stadium = client.get('/api/stadiums', params={'q': 'custom park'}).json()['items'][0]
+    assert stadium['basket_via']['names'] == [team_name]
+    ball = client.get('/api/equipment/balls').json()['items'][0]
+    assert ball['basket_via']['names'] == [team_name]
+    boots = client.get('/api/equipment/boots').json()['items']  # a boot goes with the players that wear it
+    boot = next(b for b in boots if b['id'] == fakegame.GAME_BOOT)
+    assert boot['basket_via']['total'] >= 1 and all(n and not n.startswith('#') for n in boot['basket_via']['names'])
+    # a part left out of the team does not go with it
+    client.post('/api/basket', json={'op': 'tree', 'args': {'key': f'adboards:{fakegame.TEAM}', 'mode': 'none'}})
+    assert client.get('/api/adboards', params={'in_basket': 'yes'}).json()['total'] == 0
+    client.post('/api/basket', json={'op': 'clear'})
+
+
 def test_equipment(client):
     boots = client.get('/api/equipment/boots').json()
     assert [b['id'] for b in boots['items']] == [fakegame.GAME_BOOT, fakegame.GAME_BOOT * 10 + 1]

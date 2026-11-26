@@ -14,7 +14,7 @@ export function LeaguesPage() {
   const { t } = useI18n()
   usePageLabel(t('nav.leagues'))
   const list = useListState(FILTERS)
-  const { data, isFetching } = useList('leagues', list.request, api.leagues)
+  const { data, isFetching, isLoading } = useList('leagues', list.request, api.leagues)
   const options = useOptions().data
   const tree = useTreeOp()
   const sortState = { sort: list.sort, dir: list.dir, update: list.update, current: data?.sort ?? '', currentDir: data?.dir ?? '' }
@@ -40,7 +40,7 @@ export function LeaguesPage() {
         />
         <BasketFilter value={list.values.in_basket} onChange={(v) => list.update({ in_basket: v })} />
       </FilterBar>
-      <ScrollTable>
+      <ScrollTable loading={isLoading}>
         <TableHeader>
           <TableRow>
             <TableHead className="w-10">

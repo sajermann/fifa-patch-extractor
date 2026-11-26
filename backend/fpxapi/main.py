@@ -1,11 +1,12 @@
 """HTTP API of the extractor (FastAPI). The interface is served from the same address (frontend/dist)."""
 import datetime
+import hashlib
 import logging
 import os
 import re
 from collections import OrderedDict
 from contextlib import asynccontextmanager
-from threading import Lock
+from threading import Lock, get_ident
 from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -144,9 +145,36 @@ def _row_key(kind: str, row_id) -> str:
             'adboards': 'adboard'}[kind] + f':{row_id}'
 
 
+VIA_SHOWN = 3  # owner names a list row shows (the rest only counted)
+
+
+def _owned(kind: str) -> dict:
+    """The items of a list of things picked on their own that go as a part of a team, league or player instead
+    ({id: [owner key]}; empty for the other lists or with no game loaded)."""
+    if kind not in tree.OWNED_LISTS or source.state != 'ready' or source.src is None:
+        return {}
+    return tree.with_owners(basket.data, source.src)[kind]
+
+
+def _via(owners: list[str]) -> dict | None:
+    """{names, total} of the owners a row goes with (the first few names), or None."""
+    if not owners or source.index is None:
+        return None
+    idx = source.index
+    tables = {'team': idx.teams, 'league': idx.leagues, 'player': idx.players}
+    names = []
+    for key in owners[:VIA_SHOWN]:
+        kind, _, oid = key.partition(':')  # owner keys of tree.with_owners: <team|league|player>:<id>
+        row = tables[kind].get(int(oid))
+        names.append(row['name'] if row and row.get('name') else f'#{oid}')
+    return {'names': names, 'total': len(owners)}
+
+
 def _with_basket(kind: str, rows: list[dict]) -> list[dict]:
     """The rows with in_basket (the item itself goes) and their node in the selection tree: basket_key,
-    basket_state (full | only | part | none) and basket_count ({on, total} of what is right inside, or None)."""
+    basket_state (full | only | part | none) and basket_count ({on, total} of what is right inside, or None).
+    The lists of things picked on their own also say basket_via: {names, total} of the teams, leagues or players
+    it goes with (it goes even when not picked on its own), or None."""
     if kind in ON_THEIR_OWN:
         inside = set(basket.data[kind])
     elif kind == 'leagues':
@@ -157,11 +185,14 @@ def _with_basket(kind: str, rows: list[dict]) -> list[dict]:
         inside = basket.player_ids()
     src = source.src if source.state == 'ready' else None
     t = tree.Tree(basket.data, src) if src else None
+    owned = _owned(kind)
     out = []
     for r in rows:
         key = _row_key(kind, r['id'])
         row = {**r, 'in_basket': r['id'] in inside, 'basket_key': key,
                'basket_state': 'full' if r['id'] in inside else 'none', 'basket_count': None}
+        if kind in tree.OWNED_LISTS:
+            row['basket_via'] = _via(owned.get(r['id'], []))
         if t is not None and kind in ('nations', 'leagues', 'teams', 'players'):
             kids = t.children(key)
             row['basket_state'] = t.state(key)
@@ -198,6 +229,7 @@ def _basket_filter(kind: str, rows: list[dict], value: Optional[str]):
         inside = {int(k) for k in basket.data['teams']}
     else:
         inside = basket.player_ids()
+    inside = set(inside) | set(_owned(kind))  # what goes with a team, league or player goes too
     return [r for r in rows if (r['id'] in inside) == want]
 
 
@@ -672,20 +704,56 @@ def equipment_image(kind: str, code: int, size: Optional[int] = None):
     width = _size(size) or 512
 
     def make():
-        mesh = src.files.read(equipment.mesh_path(one, code))
-        texture = src.files.read(equipment.texture_path(one, code))
-        if texture is None:
+        mesh_path = equipment.mesh_path(one, code)
+        texture_path = equipment.texture_path(one, code)
+        if not src.files.exists(texture_path):
             others = [p for p in equipment.code_files(one, code, src.files.list(equipment.folder(one)))
                       if p.endswith('_textures.rx3')]
-            texture = src.files.read(others[0]) if others else None
-        if mesh is None or texture is None:
+            texture_path = others[0] if others else None
+        mesh_stamp = src.files.stamp(mesh_path)
+        texture_stamp = src.files.stamp(texture_path) if texture_path else None
+        if mesh_stamp is None or texture_stamp is None:
             return None
-        try:
-            return images.png(equipment.thumbnail(one, mesh, texture, width))
-        except Exception:  # noqa: BLE001 - a file it cannot draw: the screen shows its placeholder
-            log.warning('cannot draw %s %s', one, code, exc_info=True)
-            return None
+
+        def draw():
+            mesh, texture = src.files.read(mesh_path), src.files.read(texture_path)
+            if mesh is None or texture is None:
+                return None
+            try:
+                return images.png(equipment.thumbnail(one, mesh, texture, width))
+            except Exception:  # noqa: BLE001 - a file it cannot draw: the screen shows its placeholder
+                log.warning('cannot draw %s %s', one, code, exc_info=True)
+                return None
+        return _drawn_on_disk(f'{one}|{code}|{width}|{mesh_stamp}|{texture_stamp}', draw)
     return _png(('equipment', kind, code, width), make)
+
+
+EQUIPMENT_DRAWING = 1  # raise when the drawing changes: the pictures saved on disk are drawn again
+DRAWN_DIR = os.path.join(settings.DATA_DIR, 'cache', 'equipment')
+
+
+def _drawn_on_disk(mark: str, draw) -> bytes | None:
+    """A boot, glove or ball picture saved on disk (drawing one from its mesh takes seconds), found again by `mark`:
+    what it is plus the stamps of its files (GameFiles.stamp: a file that changes gives a new mark, without reading
+    it). A file that cannot be drawn is remembered too (an empty file)."""
+    digest = hashlib.sha1(f'{EQUIPMENT_DRAWING}|{mark}'.encode()).hexdigest()
+    path = os.path.join(DRAWN_DIR, digest[:2], digest + '.png')
+    try:
+        with open(path, 'rb') as f:
+            data = f.read()
+        return data or None
+    except OSError:
+        pass
+    data = draw()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = f'{path}.{os.getpid()}.{get_ident()}.tmp'
+        with open(tmp, 'wb') as f:
+            f.write(data or b'')
+        os.replace(tmp, path)
+    except OSError:
+        log.warning('cannot save the picture %s', path, exc_info=True)
+    return data
 
 
 @app.get('/api/image/stadium/{sid}/{variant}')

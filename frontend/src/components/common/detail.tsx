@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import type { Raw } from '@/api/types'
+import type { BasketVia, Raw } from '@/api/types'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
 
@@ -119,6 +119,40 @@ export function BasketCheck({ checked, onChange, label, disabled }: { checked: b
       onClick={(e) => e.stopPropagation()}
     />
   )
+}
+
+/** "Goes with Palmeiras" / "Goes with A, B, C and 5 more": the teams, leagues or players an item goes with. */
+export function useViaText() {
+  const { t } = useI18n()
+  return (via: BasketVia) => {
+    const names = via.names.join(', ')
+    return via.total > via.names.length
+      ? t('basket.goesWithMore', { names, count: via.total - via.names.length })
+      : t('basket.goesWith', { names })
+  }
+}
+
+/** The checkbox of a row that can go on its own or as a part of a team, league or player: checked when it goes
+ * either way; while it goes only as a part it cannot be unchecked here (it is taken out from its owner). */
+export function BasketCheckVia({ inside, via, onChange }: { inside: boolean; via: BasketVia | null; onChange: (v: boolean) => void }) {
+  const { t } = useI18n()
+  const viaText = useViaText()
+  const onlyVia = !inside && !!via
+  return (
+    <BasketCheck
+      checked={inside || !!via}
+      disabled={onlyVia}
+      label={onlyVia ? t('basket.goesWithHint', { text: viaText(via) }) : inside ? t('basket.remove') : t('basket.add')}
+      onChange={onChange}
+    />
+  )
+}
+
+/** The line under a row's name that says what it goes with (nothing when it goes with nothing). */
+export function ViaNote({ via }: { via: BasketVia | null }) {
+  const viaText = useViaText()
+  if (!via) return null
+  return <div className="text-xs text-muted-foreground">{viaText(via)}</div>
 }
 
 export function Badge({ children, tone = 'muted', className }: { children: ReactNode; tone?: 'muted' | 'warn' | 'ok'; className?: string }) {

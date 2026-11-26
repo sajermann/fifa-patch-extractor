@@ -24,6 +24,7 @@ TEAM_PARTS = ('stadium', 'ball', 'adboards')
 PLAYER_PARTS = ('boot', 'glove')
 GEAR_COLUMN = {'boot': 'shoetypecode', 'glove': 'gkglovetypecode'}
 GROUPS = ('players', 'stadiums', 'adboards', 'boots', 'gloves', 'balls')
+OWNED_LISTS = ('stadiums', 'adboards', 'boots', 'gloves', 'balls')  # can go on their own or as a part of something
 MODES = ('all', 'none', 'only')
 
 
@@ -337,37 +338,57 @@ def set_node(d: dict, src: fifa14.Fifa14Source, key: str, mode: str) -> None:
             set_node(d, src, child, 'none')
 
 
-def package_counts(d: dict, src: fifa14.Fifa14Source, idx) -> dict[str, int]:
-    """How many stadiums, board files, boots, gloves and balls the package takes (the same rules as the package:
-    the ones picked on their own plus the parts of the teams, leagues and players that are not left out; a boot,
-    glove or ball counts only when the game has its files)."""
+def board_name(path: str) -> str:
+    """The file name (without .rx3) of a board path; a board picked on its own is already one."""
+    return path if '/' not in path else path.rsplit('/', 1)[-1].rsplit('.', 1)[0]
+
+
+def with_owners(d: dict, src: fifa14.Fifa14Source) -> dict[str, dict]:
+    """The stadiums, board files, boots, gloves and balls that go as a part of something else of the basket, by
+    list: {stadiums: {id: [owner key]}, adboards: {file name: [...]}, boots|gloves|balls: {code: [...]}}. Owner
+    keys: team:<id>, league:<id>, player:<id>. A part left out (the basket's `off`) does not count."""
     off = d.get('off', {})
-    stadiums = set(d['stadiums'])
-    boards = set(d['adboards'])
-    gear = {lst: set(d[lst]) for lst in ('boots', 'gloves', 'balls')}
-    players = set(d['players'])
+    out: dict[str, dict] = {lst: {} for lst in OWNED_LISTS}
+
+    def add(lst, item, owner):
+        owners = out[lst].setdefault(item, [])
+        if owner not in owners:
+            owners.append(owner)
+    players = list(d['players'])
     for k, team in d['teams'].items():
         tid = int(k)
-        players.update(team['players'])
+        players += [p for p in team['players'] if p not in players]
         parts_off = off.get(f'team:{tid}', [])
         if 'stadium' not in parts_off:
-            stadiums.update(src.team_stadiums.get(tid, []))
+            for sid in src.team_stadiums.get(tid, []):
+                add('stadiums', sid, f'team:{tid}')
         if 'adboards' not in parts_off:
-            boards.update(b['path'] for b in src.team_adboards(tid))
+            for b in src.team_adboards(tid):
+                add('adboards', board_name(b['path']), f'team:{tid}')
         ball = (src.teams.get(tid) or {}).get('balltype')
         if 'ball' not in parts_off and isinstance(ball, int) and ball > 0:
-            gear['balls'].add(ball)
+            add('balls', ball, f'team:{tid}')
     for lid in d['leagues']:
         if 'adboards' not in off.get(f'league:{lid}', []):
-            boards.update(b['path'] for b in src.league_adboards(lid))
+            for b in src.league_adboards(lid):
+                add('adboards', board_name(b['path']), f'league:{lid}')
     for pid in players:
         row = src.players.get(pid) or {}
         for kind, lst in (('boot', 'boots'), ('glove', 'gloves')):
             code = row.get(GEAR_COLUMN[kind])
             if isinstance(code, int) and code > 0 and kind not in off.get(f'player:{pid}', []):
-                gear[lst].add(code)
-    # the boards picked on their own are file names, the others paths: count each file once
-    names = {b if '/' not in b else b.rsplit('/', 1)[-1].rsplit('.', 1)[0] for b in boards}
+                add(lst, code, f'player:{pid}')
+    return out
+
+
+def package_counts(d: dict, src: fifa14.Fifa14Source, idx) -> dict[str, int]:
+    """How many stadiums, board files, boots, gloves and balls the package takes (the same rules as the package:
+    the ones picked on their own plus the parts of the teams, leagues and players that are not left out; a boot,
+    glove or ball counts only when the game has its files)."""
+    owned = with_owners(d, src)
+    stadiums = set(d['stadiums']) | set(owned['stadiums'])
+    names = {board_name(b) for b in d['adboards']} | set(owned['adboards'])
+    gear = {lst: set(d[lst]) | set(owned[lst]) for lst in ('boots', 'gloves', 'balls')}
     return {'stadiums': len(stadiums), 'adboards': len(names),
             **{lst: len({c for c in codes if c in idx.equipment[lst]}) for lst, codes in gear.items()}}
 

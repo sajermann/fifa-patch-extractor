@@ -78,6 +78,24 @@ class GameFiles:
                 return archive.name
         return None
 
+    def stamp(self, path: str) -> str | None:
+        """A cheap mark of the copy of `path` the game reads, without reading it: changes when that copy changes
+        (the loose file's or the archive's path, size and time, plus the entry's place in the archive), or None."""
+        key = normalize(path)
+        loose = self._loose.get(key)
+        try:
+            if loose:
+                st = os.stat(loose)
+                return f'{os.path.abspath(loose)}|{st.st_size}|{st.st_mtime_ns}'
+            for archive in self.archives:
+                found = archive.entries.get(key)
+                if found is not None:
+                    st = os.stat(archive.path)
+                    return f'{os.path.abspath(archive.path)}|{st.st_size}|{st.st_mtime_ns}|{found[0]}|{found[1]}'
+        except OSError:
+            return None
+        return None
+
     def exists(self, path: str) -> bool:
         return self.where(path) is not None
 

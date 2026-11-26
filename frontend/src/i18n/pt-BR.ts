@@ -146,6 +146,9 @@ export const ptBR = {
 
   'basket.add': 'Adicionar à cesta',
   'basket.remove': 'Tirar da cesta',
+  'basket.goesWith': 'Vai com {names}',
+  'basket.goesWithMore': 'Vai com {names} e mais {count}',
+  'basket.goesWithHint': '{text}. Para tirar, desmarque no time, liga ou jogador.',
 
   'tab.data': 'Dados',
   'section.countriesCount': 'Países ({count})',

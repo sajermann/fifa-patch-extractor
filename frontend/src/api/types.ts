@@ -116,6 +116,14 @@ export interface AdboardRow extends BasketNode {
   stadium: number | null
   variant: number | null
   in_basket: boolean
+  basket_via: BasketVia | null
+}
+
+/** The teams, leagues or players of the basket an item goes with (it goes even when not picked on its own):
+ * the first few names and how many there are. */
+export interface BasketVia {
+  names: string[]
+  total: number
 }
 
 export interface StadiumRow extends BasketNode {
@@ -133,6 +141,7 @@ export interface StadiumRow extends BasketNode {
   picture: number | null
   has_3d: boolean
   in_basket: boolean
+  basket_via: BasketVia | null
 }
 
 export interface LeagueRow extends BasketNode {
@@ -389,6 +398,7 @@ export interface EquipmentRow extends BasketNode {
   listed: boolean | null
   files: number
   in_basket: boolean
+  basket_via: BasketVia | null
 }
 
 export interface BasketForm {

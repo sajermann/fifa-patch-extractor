@@ -2,7 +2,7 @@ import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/compon
 import { api } from '@/api/client'
 import { SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
 import type { EquipmentKind } from '@/api/types'
-import { BasketCheck } from '@/components/common/detail'
+import { BasketCheckVia, ViaNote } from '@/components/common/detail'
 import { EquipmentImage } from '@/components/common/pictures'
 import { useI18n, type MessageKey } from '@/i18n'
 import { usePageLabel } from '@/lib/back'
@@ -22,7 +22,7 @@ export function EquipmentPage({ kind }: { kind: EquipmentKind }) {
   const k = (key: string, vars?: Record<string, string | number>) => t(`${kind}.${key}` as MessageKey, vars)
   usePageLabel(t(`nav.${kind}` as MessageKey))
   const list = useListState(FILTERS)
-  const { data, isFetching } = useList(kind, list.request, (p) => api.equipment(kind, p))
+  const { data, isFetching, isLoading } = useList(kind, list.request, (p) => api.equipment(kind, p))
   const op = useBasketOp()
   const tree = useTreeOp()
   const sortState = { sort: list.sort, dir: list.dir, update: list.update, current: data?.sort ?? '', currentDir: data?.dir ?? '' }
@@ -45,7 +45,7 @@ export function EquipmentPage({ kind }: { kind: EquipmentKind }) {
         />
         <BasketFilter value={list.values.in_basket} onChange={(v) => list.update({ in_basket: v })} />
       </FilterBar>
-      <ScrollTable>
+      <ScrollTable loading={isLoading}>
         <TableHeader>
           <TableRow>
             <TableHead className="w-10">
@@ -61,9 +61,9 @@ export function EquipmentPage({ kind }: { kind: EquipmentKind }) {
           {data?.items.map((e) => (
             <TableRow key={e.id}>
               <TableCell>
-                <BasketCheck
-                  checked={e.in_basket}
-                  label={e.in_basket ? t('basket.remove') : t('basket.add')}
+                <BasketCheckVia
+                  inside={e.in_basket}
+                  via={e.basket_via}
                   onChange={(v) => op.mutate({ op: v ? 'add_equipment' : 'remove_equipment', args: { kind, id: e.id } })}
                 />
               </TableCell>
@@ -74,6 +74,7 @@ export function EquipmentPage({ kind }: { kind: EquipmentKind }) {
                 <span className={e.name ? 'font-medium' : 'font-medium text-muted-foreground'}>
                   {e.name ?? t('equipment.unnamed', { code: e.id })}
                 </span>
+                <ViaNote via={e.basket_via} />
               </TableCell>
               <TableCell className="text-center tabular-nums">{e.id}</TableCell>
               <TableCell className="text-center tabular-nums">{e.wearers || '—'}</TableCell>

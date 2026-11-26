@@ -73,6 +73,24 @@ def test_unreadable_files_raise_known_errors(loose_game):
         images.decode_dds(src.files.read(src.crest_path(fakegame.SMALL_TEAM)))
 
 
+def test_file_stamp_changes_with_the_file(loose_game, tmp_path):
+    """A stamp marks the copy the game reads without reading it: same file, same stamp; changed file, new one."""
+    import os
+    import shutil
+    import time
+    game = shutil.copytree(loose_game, tmp_path / 'game')  # its own copy: the shared fake game stays as it is
+    src = Fifa14Source(str(game))
+    path = src.crest_path(fakegame.SMALL_TEAM)
+    first = src.files.stamp(path)
+    assert first and src.files.stamp(path) == first
+    assert src.files.stamp('data/nothing/here.rx3') is None
+    loose = src.files._loose[path]
+    with open(loose, 'ab') as f:
+        f.write(b'x')
+    os.utime(loose, ns=(time.time_ns(), time.time_ns() + 10**9))
+    assert src.files.stamp(path) != first
+
+
 def test_ink_color():
     assert kitfonts.ink_color(fakegame.number_font_rx3((250, 10, 10))) == [250, 10, 10]
     assert kitfonts.ink_color(b'nothing') is None

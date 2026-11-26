@@ -2,7 +2,7 @@ import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/compon
 import { api } from '@/api/client'
 import { SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
 import type { AdboardRow } from '@/api/types'
-import { Badge, BasketCheck } from '@/components/common/detail'
+import { Badge, BasketCheckVia, ViaNote } from '@/components/common/detail'
 import { AdboardImage } from '@/components/common/pictures'
 import { useI18n } from '@/i18n'
 import { usePageLabel } from '@/lib/back'
@@ -18,7 +18,7 @@ export function AdboardsPage() {
   const { t } = useI18n()
   usePageLabel(t('nav.adboards'))
   const list = useListState(FILTERS)
-  const { data, isFetching } = useList('adboards', list.request, api.adboards)
+  const { data, isFetching, isLoading } = useList('adboards', list.request, api.adboards)
   const op = useBasketOp()
   const tree = useTreeOp()
   const sortState = { sort: list.sort, dir: list.dir, update: list.update, current: data?.sort ?? '', currentDir: data?.dir ?? '' }
@@ -51,7 +51,7 @@ export function AdboardsPage() {
         />
         <BasketFilter value={list.values.in_basket} onChange={(v) => list.update({ in_basket: v })} />
       </FilterBar>
-      <ScrollTable>
+      <ScrollTable loading={isLoading}>
         <TableHeader>
           <TableRow>
             <TableHead className="w-10">
@@ -67,17 +67,18 @@ export function AdboardsPage() {
           {data?.items.map((b) => (
             <TableRow key={b.id}>
               <TableCell>
-                <BasketCheck
-                  checked={b.in_basket}
-                  label={b.in_basket ? t('basket.remove') : t('basket.add')}
+                <BasketCheckVia
+                  inside={b.in_basket}
+                  via={b.basket_via}
                   onChange={(v) => op.mutate({ op: v ? 'add_adboard' : 'remove_adboard', args: { id: b.id } })}
                 />
               </TableCell>
               <TableCell>
                 <AdboardImage name={b.id} size={64} className="aspect-[1/2] w-5 rounded border object-cover" />
               </TableCell>
-              <TableCell data-grow className="font-medium">
-                {b.id}
+              <TableCell data-grow>
+                <div className="font-medium">{b.id}</div>
+                <ViaNote via={b.basket_via} />
               </TableCell>
               <TableCell className="text-center">
                 <Badge>{b.kind === 'game' ? t('adboards.kindGame') : t('adboards.kindSpecific')}</Badge>

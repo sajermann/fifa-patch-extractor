@@ -3,7 +3,7 @@ import { Landmark } from 'lucide-react'
 import { TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { api } from '@/api/client'
 import { SelectAllHead, useTreeOp } from '@/components/common/selectionTree'
-import { Badge, BasketCheck } from '@/components/common/detail'
+import { Badge, BasketCheckVia, ViaNote } from '@/components/common/detail'
 import { StadiumImage } from '@/components/common/pictures'
 import { useI18n } from '@/i18n'
 import { FilterBar, FilterSelect, LIST_PAGE, Pager, ScrollTable, SearchInput, SortHead, useListState } from '@/lib/list'
@@ -17,7 +17,7 @@ export function StadiumsPage() {
   const { t } = useI18n()
   usePageLabel(t('nav.stadiums'))
   const list = useListState(FILTERS)
-  const { data, isFetching } = useList('stadiums', list.request, api.stadiums)
+  const { data, isFetching, isLoading } = useList('stadiums', list.request, api.stadiums)
   const options = useOptions().data
   const op = useBasketOp()
   const tree = useTreeOp()
@@ -47,7 +47,7 @@ export function StadiumsPage() {
         />
         <BasketFilter value={list.values.in_basket} onChange={(v) => list.update({ in_basket: v })} />
       </FilterBar>
-      <ScrollTable>
+      <ScrollTable loading={isLoading}>
         <TableHeader>
           <TableRow>
             <TableHead className="w-10">
@@ -66,9 +66,9 @@ export function StadiumsPage() {
           {data?.items.map((s) => (
             <TableRow key={s.id}>
               <TableCell>
-                <BasketCheck
-                  checked={s.in_basket}
-                  label={s.in_basket ? t('basket.remove') : t('basket.add')}
+                <BasketCheckVia
+                  inside={s.in_basket}
+                  via={s.basket_via}
                   onChange={(v) => op.mutate({ op: v ? 'add_stadium' : 'remove_stadium', args: { id: s.id } })}
                 />
               </TableCell>
@@ -89,6 +89,7 @@ export function StadiumsPage() {
                   {!s.has_3d && <Badge>{t('stadiums.no3d')}</Badge>}
                 </div>
                 {s.language_name && s.language_name !== s.name && <div className="text-xs text-muted-foreground">{s.language_name}</div>}
+                <ViaNote via={s.basket_via} />
               </TableCell>
               <TableCell>{s.country ?? '—'}</TableCell>
               <TableCell>{s.home_team ?? '—'}</TableCell>

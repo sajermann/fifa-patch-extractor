@@ -33,8 +33,13 @@ function GameImage({
 }) {
   const token = useToken();
   const [failed, setFailed] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const src = `${url}${url.includes("?") ? "&" : "?"}v=${token}`;
+  // a picture already in the browser's cache can finish before React listens: check it once it is on the page
+  const seeLoaded = (img: HTMLImageElement | null) => {
+    if (img?.complete && img.naturalWidth > 0 && loaded !== src) setLoaded(src);
+  };
   if (!available || failed === src)
     return (
       <span
@@ -53,7 +58,15 @@ function GameImage({
         src={src}
         alt={alt}
         loading="lazy"
-        className={cn("object-contain", zoom && "cursor-zoom-in", className)}
+        ref={seeLoaded}
+        // while it is on the way (a boot or a ball is drawn from its 3D model, seconds): a pulsing placeholder
+        className={cn(
+          "object-contain",
+          zoom && "cursor-zoom-in",
+          loaded !== src && "animate-pulse rounded bg-muted",
+          className,
+        )}
+        onLoad={() => setLoaded(src)}
         onError={() => setFailed(src)}
         onClick={
           zoom

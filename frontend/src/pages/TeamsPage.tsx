@@ -16,7 +16,7 @@ export function TeamsPage() {
   const { t } = useI18n()
   usePageLabel(t('nav.teams'))
   const list = useListState(FILTERS)
-  const { data, isFetching } = useList('teams', list.request, api.teams)
+  const { data, isFetching, isLoading } = useList('teams', list.request, api.teams)
   const options = useOptions().data
   const tree = useTreeOp()
   const sortState = { sort: list.sort, dir: list.dir, update: list.update, current: data?.sort ?? '', currentDir: data?.dir ?? '' }
@@ -36,7 +36,7 @@ export function TeamsPage() {
         />
         <BasketFilter value={list.values.in_basket} onChange={(v) => list.update({ in_basket: v })} />
       </FilterBar>
-      <ScrollTable>
+      <ScrollTable loading={isLoading}>
         <TableHeader>
           <TableRow>
             <TableHead className="w-10">
