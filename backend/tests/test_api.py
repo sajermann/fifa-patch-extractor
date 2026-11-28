@@ -200,6 +200,18 @@ def test_selections(client):
     assert client.get('/api/selections').json() == []
 
 
+def test_selection_keeps_package_fields(client):
+    """Each saved selection keeps the Package fields; loading one brings them back."""
+    form = {'patch_name': 'Patch A', 'credits': 'Me', 'credits_url': 'https://a.example', 'include_originals': False}
+    client.post('/api/basket', json={'op': 'set_form', 'args': form})
+    a = client.post('/api/selections', json={'name': 'A'}).json()
+    client.post('/api/basket', json={'op': 'set_form', 'args': {'patch_name': 'Patch B', 'credits': '',
+                                                                  'credits_url': '', 'include_originals': True}})
+    client.post('/api/selections', json={'name': 'B'})
+    client.post(f'/api/selections/{a["id"]}/load')
+    assert {k: client.get('/api/basket').json()['form'][k] for k in form} == form
+
+
 def test_export(client):
     assert client.post('/api/export').json()['detail']['code'] == 'basket_empty'
     client.post('/api/basket', json={'op': 'add_league', 'args': {'id': fakegame.LEAGUE}})

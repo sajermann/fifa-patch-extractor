@@ -58,6 +58,11 @@ game/<game path>                   files as the game reads them (chunked contain
 Every item has `source_id` and `raw`: `{table name: [rows]}` with the database rows that belong to it, every column,
 values as stored (integers already include the field's range offset, as the game uses them).
 
+Leagues, teams, nations and stadiums also have `language_names`: `{name key: {language: text}}`, the same keys as the
+language-database part of `names` (not `database`), read from every language database of the source (`data/loc/<language>.db`,
+its `_upd` database winning), e.g. `{"full": {"eng_us": "…", "por_br": "…"}}`. A language without that text is left
+out. Missing in packages made before it: read `names` (one language, `source.language`) instead.
+
 ### League
 
 | field | meaning |
@@ -80,7 +85,7 @@ values as stored (integers already include the field's range offset, as the game
 | `crest` | `{image, source_path, original?, image_no_background?, preferred?}` (`preferred: "no_background"` when the user asked for it) |
 | `kits[]` | `type` (kit type id), `role` (`home`, `away`, `goalkeeper` or null), `jersey`, `shorts`, `source_path`, `original?`, `print_positions` (8 rectangles `[u0, v0, u1, v1]`: crest, back number, front number, name, name arc center, name arc tangent, shorts crest, shorts number), `colors`, `name_color`, `name_font {id, file?, family_name?}`, `name_layout`, `name_case`, `back_name_placement`, `number_font {id, color, file?, ink_color?}`, `front_number_placement`, `shorts_number_font {…}`, `shorts_number_placement`, `collar` |
 | `roster[]` | the exported players: `player_id`, `jersey_number`, `position` (the game's code, 28 = substitute, 29 = reserve), `position_name` |
-| `formation` | `{id, name, base, positions[]}`: the team's `formations` row (base = which of the game's generic formations; each position `{code, name, x, y}`, 0-1 with the own goal at y 0), or null |
+| `formation` | `{id, name, base, shared, positions[], row}`: the `formations` row the team plays with: the one its `teamformationteamstylelinks` row points at (`shared: true` when it belongs to team -1, a formation other teams may use too), else its own row. `base` = which of the source's generic formations it is (its `relativeformationid`; a patch may have generic formations the game does not have, so compare the positions); each position `{code, name, x, y}`, 0-1 with the own goal at y 0; `row` = every column of that row but `teamid` and `formationid` (roles, run directions, offsets…). Null when the team has neither |
 | `adboards[]` | `{image, source_path, original?, tournament, stadium, variant}`: the board files a patch's stadium script names after the team (`specificadboard_<team>_<tournament>_<stadium>_<variant>.rx3`; `tournament` / `stadium` null = any). Empty in the clean game |
 | `adboard_tournament_id` | the tournament the patch's script gives the team (`assignTeamTournament` in `data/fifarna/lua/assignments/teams/team_<id>.lua`), or null. Its meaning is the patch's (a league id, an era…) |
 | `stadium_ids`, `stadium_custom_name` | stadiums of the team in the source (`teamstadiumlinks`) and the name it gives its stadium (`stadiumassignments`), or null |

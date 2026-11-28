@@ -263,9 +263,18 @@ class Fifa14Source:
                                      if r.get('stadiumcustomname')}
 
     def formation(self, tid: int) -> dict | None:
-        """The team's formation: name, which of the game's generic formations it is (base), and its 11 positions
-        (code, name, x/y on the pitch: 0-1, own goal at y 0)."""
-        row = next((r for r in self._by('formations', 'teamid').get(tid, [])), None)
+        """The formation the team plays: the shared one its teamformationteamstylelinks row points at (`shared`:
+        a formation of team -1, which other teams may use too), else its own row. Name, which of the source's
+        generic formations it is (base), its 11 positions (code, name, x/y on the pitch: 0-1, own goal at y 0) and
+        the whole row (`row`: every column but teamid and formationid)."""
+        row, shared = None, False
+        if 'teamformationteamstylelinks' in self.tables:
+            link = next(iter(self._by('teamformationteamstylelinks', 'teamid').get(tid, [])), None)
+            if link is not None:
+                row = next(iter(self._by('formations', 'formationid').get(link.get('formationid'), [])), None)
+                shared = row is not None and row.get('teamid') == -1
+        if row is None:
+            row = next((r for r in self._by('formations', 'teamid').get(tid, [])), None)
         if row is None:
             return None
         positions = []
@@ -274,7 +283,8 @@ class Fifa14Source:
             positions.append({'code': code, 'name': position_name(code),
                               'x': row.get(f'offset{i}x'), 'y': row.get(f'offset{i}y')})
         return {'id': row.get('formationid'), 'name': row.get('formationname'), 'base': row.get('relativeformationid'),
-                'positions': positions}
+                'shared': shared, 'positions': positions,
+                'row': {k: v for k, v in row.items() if k not in ('teamid', 'formationid')}}
 
     def tables_with(self, column: str) -> list[str]:
         return [name for name, t in self.tables.items() if column in t['fields']]

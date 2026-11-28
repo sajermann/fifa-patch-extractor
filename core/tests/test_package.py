@@ -56,6 +56,12 @@ def test_league_team_players(src):
     assert team['formation']['name'] == '4-4-2' and team['formation']['base'] == 8
     assert [p['name'] for p in team['formation']['positions']][:3] == ['GK', 'RB', 'CB']
     assert team['formation']['positions'][0]['y'] == pytest.approx(0.05)  # a float32 of the database
+    assert not team['formation']['shared'] and team['formation']['row']['formationname'] == '4-4-2'
+    assert 'teamid' not in team['formation']['row'] and 'formationid' not in team['formation']['row']
+    # a team pointing at a shared formation of the patch (teamformationteamstylelinks): that one, whole
+    small = src.formation(fakegame.SMALL_TEAM)
+    assert small['shared'] and small['name'] == 'WM' and small['base'] == 24
+    assert small['row']['position10'] == 27 and small['row']['attackingrole_5'] == 2
     assert star['face'] and all(f['file'] in pkg.files for f in star['face']['files'].values())
     assert sorted(f['kind'] for f in star['face']['files'].values()) == ['bump', 'eyes', 'face', 'hair', 'head']
     assert star['photo']['image'] in pkg.files and star['photo']['original'] in pkg.files
@@ -122,6 +128,26 @@ def test_nation_picked_alone(src):
     assert nation['flag_files'] == ['game/data/ui/artassets/countryflags/f_54.big']
     assert nation['raw']['audionation'][0]['chantregionindex'] == 7
     assert pkg.manifest['leagues'] == [] and pkg.manifest['stadiums'] == []
+
+
+def test_names_of_every_language(tmp_path):
+    """The names go in every language database of the source (language_names), not only the chosen one."""
+    root = fakegame.build(str(tmp_path))
+    fakegame.write_strings_db(os.path.join(root, 'Game', 'data', 'loc', 'por_br.db'), [
+        (f'StadiumName_{fakegame.STADIUM}', 'Arena BR'), (f'LeagueName_{fakegame.LEAGUE}', 'Liga BR'),
+        (f'TeamName_{fakegame.TEAM}', 'Time BR'), ('NationName_54', 'Nação BR')])
+    pkg = package.build(Fifa14Source(root), Selection(
+        leagues=[fakegame.LEAGUE], teams={fakegame.TEAM: TeamPick([fakegame.STAR])}, nations=[54]))
+    m = pkg.manifest
+    stadium, = m['stadiums']
+    assert stadium['names']['full'] == 'Test Arena'  # the chosen language, as before
+    assert stadium['language_names'] == {'full': {'eng_us': 'Test Arena', 'por_br': 'Arena BR'}}
+    assert m['leagues'][0]['language_names']['full'] == {'eng_us': 'Test Premier Division of Nowhere',
+                                                         'por_br': 'Liga BR'}
+    assert m['leagues'][0]['language_names']['abbr'] == {'eng_us': 'TST 1'}  # a language without it is left out
+    assert m['teams'][0]['language_names']['full'] == {'eng_us': 'Test Athletic Club', 'por_br': 'Time BR'}
+    nation, = [n for n in m['nations'] if n['source_id'] == 54]
+    assert nation['language_names']['full'] == {'eng_us': 'Republic of Nowhere', 'por_br': 'Nação BR'}
 
 
 def test_team_stadium(src):

@@ -197,10 +197,11 @@ function SavedSelections() {
   const [name, setName] = useState('')
   const { data } = useQuery({ queryKey: ['selections'], queryFn: api.selections, enabled: open })
   const refresh = () => {
-    for (const k of ['selections', 'basket', 'status', 'stadiums', 'nations', 'leagues', 'teams', 'players']) void qc.invalidateQueries({ queryKey: [k] })
+    // same keys as useBasketOp, so the "What goes in the package" tree and every list follow the loaded basket
+    for (const k of ['selections', 'status', 'boots', 'gloves', 'balls', 'adboards', 'stadiums', 'nations', 'leagues', 'teams', 'players', 'stadium', 'nation', 'league', 'team', 'player', 'basket', 'tree']) void qc.invalidateQueries({ queryKey: [k] })
   }
   const save = useMutation({ mutationFn: () => api.saveSelection(name), onSuccess: () => { toast.success(t('selections.saved')); setName(''); refresh() }, onError: (e: Error) => toast.error(e.message) })
-  const load = useMutation({ mutationFn: api.loadSelection, onSuccess: () => { toast.success(t('selections.loaded')); refresh() }, onError: (e: Error) => toast.error(e.message) })
+  const load = useMutation({ mutationFn: api.loadSelection, onSuccess: () => { toast.success(t('selections.loaded')); setOpen(false); refresh() }, onError: (e: Error) => toast.error(e.message) })
   const remove = useMutation({ mutationFn: api.deleteSelection, onSuccess: refresh })
   return (
     <Dialog open={open} onOpenChange={setOpen}>

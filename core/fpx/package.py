@@ -386,6 +386,7 @@ class _Builder:
         return {
             'source_id': lid,
             'names': self.src.league_all_names(lid),
+            'language_names': self.src.language_names('league', lid),
             'level': row.get('level'),
             'country_nation_id': country,
             'team_ids': self.src.league_teams.get(lid, []),
@@ -504,6 +505,7 @@ class _Builder:
         return {
             'source_id': tid,
             'names': self.src.team_all_names(tid),
+            'language_names': self.src.language_names('team', tid),
             'colors': {k: v for k, v in {
                 'primary': _rgb(row, 'teamcolor1r', 'teamcolor1g', 'teamcolor1b'),
                 'secondary': _rgb(row, 'teamcolor2r', 'teamcolor2g', 'teamcolor2b'),
@@ -628,6 +630,7 @@ class _Builder:
             'source_id': nid,
             'name': row.get('nationname'),
             'names': self.src.nation_all_names(nid),
+            'language_names': self.src.language_names('nation', nid),
             'national_team_id': _id(row.get('teamid')),
             'confederation': row.get('confederation'),
             'top_tier': row.get('top_tier'),
@@ -667,6 +670,7 @@ class _Builder:
         return {
             'source_id': sid,
             'names': self.src.stadium_all_names(sid),
+            'language_names': self.src.language_names('stadium', sid),
             'capacity': row.get('capacity'),
             'year_built': row.get('yearbuilt'),
             'country_nation_id': country,

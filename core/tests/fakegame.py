@@ -383,12 +383,17 @@ FORMATION = {'teamid': TEAM, 'formationid': 50, 'formationname': '4-4-2', 'relat
              **{f'position{i}': code for i, code in enumerate((0, 3, 5, 6, 7, 12, 13, 14, 16, 24, 26))},
              **{f'offset{i}x': round(0.1 + 0.08 * i, 2) for i in range(11)},
              **{f'offset{i}y': round(0.05 + 0.08 * i, 2) for i in range(11)}}
+# a generic formation of the patch that the game does not have, SMALL_TEAM points at it (teamformationteamstylelinks)
+SHARED_FORMATION = {**FORMATION, 'teamid': -1, 'formationid': 60, 'formationname': 'WM', 'relativeformationid': 24,
+                    **{f'position{i}': code for i, code in enumerate((0, 3, 5, 7, 10, 12, 16, 18, 23, 25, 27))},
+                    'attackingrole_5': 2}
 
 
 def _tables():
     players, names, links = _players()
     players[0]['trait1'], players[0]['trait2'] = STAR_TRAITS
-    return {'formations': [FORMATION, {**FORMATION, 'teamid': -1, 'formationid': 8}],
+    return {'formations': [FORMATION, {**FORMATION, 'teamid': -1, 'formationid': 8}, SHARED_FORMATION],
+            'teamformationteamstylelinks': [{'teamid': SMALL_TEAM, 'formationid': 60, 'teamstyleid': 0, 'cddl': 0}],
             'leagues': LEAGUES, 'teams': TEAMS, 'leagueteamlinks': LEAGUE_TEAM_LINKS, 'players': players,
             'playernames': names, 'teamplayerlinks': links, 'nations': NATIONS, 'teamkits': _kits(),
             # a name edited in the database wins over the name table
